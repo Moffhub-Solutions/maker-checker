@@ -1,0 +1,29 @@
+{
+    "name": "moffhub/maker-checker",
+    "description": "A laravel package to help manage with maker checker tight requirement",
+    "type": "project",
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "Moffhub\\MakerChecker\\": "src/",
+            "Tests\\": "tests/"
+        }
+    },
+    "authors": [
+        {
+            "name": "Moffat Munene",
+            "email": "moffmu@gmail.com"
+        }
+    ],
+    "minimum-stability": "stable",
+    "require": {
+        "sourcetoad/enhanced-resources": "^7.0"
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Moffhub\\MakerChecker\\MakerCheckerServiceProvider"
+            ]
+        }
+    }
+}
