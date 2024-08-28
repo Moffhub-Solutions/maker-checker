@@ -31,6 +31,7 @@ use Moffhub\MakerChecker\Enums\RequestType;
  * @property RequestType $type
  * @property string $subject_type
  * @property int|null $subject_id
+ * @property int|null $team_id
  * @property string $maker_type
  * @property int $maker_id
  * @property string|null $checker_type
@@ -73,6 +74,7 @@ class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
         'checked_at' => 'datetime',
         'approvals' => 'array',
         'required_approvals' => 'array',
+        'team_id' => 'integer',
     ];
 
     public static function allowedFilters(): array

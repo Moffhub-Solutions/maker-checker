@@ -100,7 +100,7 @@ class RequestBuilder
     /**
      * Commence initiation of a create request.
      */
-    public function toCreate(string $model, array $payload = []): self
+    public function toCreate(string $model, array $payload = [], array $requiredApprovals = [], ?int $teamId = null): self
     {
         $this->assertRequestTypeIsNotSet();
 
@@ -111,6 +111,8 @@ class RequestBuilder
         $this->request->type = RequestType::CREATE;
         $this->request->subject_type = $model;
         $this->request->payload = $payload;
+        $this->request->required_approvals = $requiredApprovals;
+        $this->request->team_id = $teamId;
 
         return $this;
     }
@@ -125,13 +127,15 @@ class RequestBuilder
     /**
      * Commence initiation of an update request.
      */
-    public function toUpdate(Model $modelToUpdate, array $requestedChanges): self
+    public function toUpdate(Model $modelToUpdate, array $requestedChanges, array $requiredApprovals = [], ?int $teamId = null): self
     {
         $this->assertRequestTypeIsNotSet();
 
         $this->request->type = RequestType::UPDATE;
         $this->request->subject()->associate($modelToUpdate);
         $this->request->payload = $requestedChanges;
+        $this->request->required_approvals = $requiredApprovals;
+        $this->request->team_id = $teamId;
 
         return $this;
     }
@@ -139,11 +143,14 @@ class RequestBuilder
     /**
      * Commence initiation of a delete request.
      */
-    public function toDelete(Model $modelToDelete): self
+    public function toDelete(Model $modelToDelete, array $requiredApprovals = [], ?int $teamId = null): self
     {
         $this->assertRequestTypeIsNotSet();
 
         $this->request->type = RequestType::DELETE;
+        $this->request->payload = [];
+        $this->request->required_approvals = $requiredApprovals;
+        $this->request->team_id = $teamId;
         $this->request->subject()->associate($modelToDelete);
 
         return $this;
@@ -156,7 +163,7 @@ class RequestBuilder
      *
      * @throws Exception
      */
-    public function toExecute(string|Closure $executableAction, array $payload = [], array $requiredApprovals = []): self
+    public function toExecute(string|Closure $executableAction, array $payload = [], array $requiredApprovals = [], ?int $teamId = null): self
     {
         $this->assertRequestTypeIsNotSet();
         if ($executableAction instanceof Closure) {
@@ -175,6 +182,7 @@ class RequestBuilder
         $this->request->executable = $executableAction;
         $this->request->payload = $payload;
         $this->request->required_approvals = $requiredApprovals;
+        $this->request->team_id = $teamId;
         $this->uniqueIdentifiers = $this->uniqueIdentifiers ?: $executable->uniqueBy();
 
         $this->setHooksFromExecutable($executable);
