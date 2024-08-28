@@ -78,22 +78,38 @@ class MakerCheckerRequestManager
     public function approve(
         MakerCheckerRequest $request,
         Model $approver,
-        ?string $remarks = null,
+        ?string $role = null,
+        ?string $remarks = null
     ): MakerCheckerRequest {
         $this->assertRequestCanBeChecked($request, $approver);
 
-        $request->update([
-            'status' => RequestStatus::APPROVED,
-            'checker_type' => $approver->getMorphClass(),
-            'checker_id' => $approver->getKey(),
-            'checked_at' => Carbon::now(),
-            'remarks' => $remarks,
-        ]);
-
         try {
-            $this->executeCallbackHook($request, Hooks::PRE_APPROVAL);
+            // Add approval, handling the case where no role is provided
+            $request->addApproval($approver, $role);
 
-            $this->fulfillRequest($request);
+            // Check if the required approvals threshold is met
+            if ($request->hasMetApprovalThreshold()) {
+                $request->update([
+                    'status' => RequestStatus::APPROVED,
+                    'checked_at' => Carbon::now(),
+                    'remarks' => $remarks,
+                ]);
+
+                // Execute pre-approval hook
+                $this->executeCallbackHook($request, Hooks::PRE_APPROVAL);
+
+                // Fulfill the request
+                $this->fulfillRequest($request);
+
+                // Dispatch the approval event
+                $this->app['events']->dispatch(new RequestApproved($request));
+            } else {
+                // If some approvals are done but not all, mark as partially approved
+                $request->update([
+                    'status' => RequestStatus::PARTIALLY_APPROVED,
+                    'remarks' => $remarks,
+                ]);
+            }
 
             return $request;
         } catch (Throwable $e) {
@@ -102,19 +118,17 @@ class MakerCheckerRequestManager
                 'exception' => (string) $e,
             ]);
 
-            $onFailureCallBack = $this->getHook($request, Hooks::ON_FAILURE);
-
-            if ($onFailureCallBack) {
-                $onFailureCallBack($request, $e);
-            }
+            // Execute failure hook
+            $this->executeCallbackHook($request, Hooks::ON_FAILURE);
 
             $this->app['events']->dispatch(new RequestFailed($request, $e));
 
             throw RequestCouldNotBeProcessed::create($e->getMessage(), $e);
         } finally {
-            $this->executeCallbackHook($request, Hooks::POST_APPROVAL);
-
-            $this->app['events']->dispatch(new RequestApproved($request));
+            // Execute post-approval hook
+            if ($request->status === RequestStatus::APPROVED) {
+                $this->executeCallbackHook($request, Hooks::POST_APPROVAL);
+            }
         }
     }
 

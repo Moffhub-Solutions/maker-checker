@@ -6,17 +6,13 @@ namespace Moffhub\MakerChecker\Enums;
 
 enum RequestStatus: string
 {
-    case PENDING = 'pending';
-
-    case PROCESSING = 'processing';
-
     case APPROVED = 'approved';
-
-    case REJECTED = 'rejected';
-
     case EXPIRED = 'expired';
-
     case FAILED = 'failed';
+    case PARTIALLY_APPROVED = 'partially_approved';
+    case PENDING = 'pending';
+    case PROCESSING = 'processing';
+    case REJECTED = 'rejected';
 
     public static function getFinalizedStatuses(): array
     {
@@ -26,12 +22,13 @@ enum RequestStatus: string
     public function display(): string
     {
         return match ($this) {
-            self::PENDING => 'Pending',
-            self::PROCESSING => 'Processing',
             self::APPROVED => 'Approved',
-            self::REJECTED => 'Rejected',
             self::EXPIRED => 'Expired',
             self::FAILED => 'Failed',
+            self::PARTIALLY_APPROVED => 'Partially Approved',
+            self::PENDING => 'Pending',
+            self::PROCESSING => 'Processing',
+            self::REJECTED => 'Rejected',
         };
     }
 }

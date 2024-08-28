@@ -9,6 +9,7 @@ use App\Models\Traits\Sortable;
 use App\Models\User;
 use Carbon\CarbonImmutable;
 use Closure;
+use Exception;
 use Illuminate\Contracts\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Eloquent\Model;
@@ -24,6 +25,7 @@ use Moffhub\MakerChecker\Enums\RequestType;
  * @property string $code
  * @property string $description
  * @property array|null $payload
+ * @property array|null $required_approvals
  * @property array|null $metadata
  * @property RequestStatus $status
  * @property RequestType $type
@@ -69,6 +71,8 @@ class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
         'type' => RequestType::class,
         'made_at' => 'datetime',
         'checked_at' => 'datetime',
+        'approvals' => 'array',
+        'required_approvals' => 'array',
     ];
 
     public static function allowedFilters(): array
@@ -102,6 +106,78 @@ class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
                     $callback($builder);
                 }
             });
+    }
+
+    /**
+     * @throws Exception
+     */
+    public function addApproval(Model $approver, ?string $role = null): void
+    {
+        $approvals = $this->approvals ?? [];
+        $role = $role ?: 'default';
+
+        // Check if this approver has already approved
+        foreach ($approvals as $approval) {
+            if ($approval['checker_type'] === $approver->getMorphClass() && $approval['checker_id'] === $approver->getKey()) {
+                throw new Exception('This approver has already approved the request.');
+            }
+        }
+
+        // Add the new approver to the approvals array
+        $approvals[] = [
+            'checker_type' => $approver->getMorphClass(),
+            'checker_id' => $approver->getKey(),
+            'role' => $role,
+            'approved_at' => now(),
+        ];
+
+        $this->update([
+            'approvals' => $approvals,
+        ]);
+    }
+
+    public function hasMetApprovalThreshold(): bool
+    {
+        $requiredApprovals = $this->required_approvals ?? [];
+        /** @var array $actualApprovals */
+        $actualApprovals = $this->approvals ?? [];
+
+        if (empty($requiredApprovals)) {
+            return count($actualApprovals) >= $this->defaultApprovalCount();
+        }
+
+        foreach ($requiredApprovals as $role => $count) {
+            $actualCount = collect($actualApprovals)->where('role', $role)->count();
+            if ($actualCount < $count) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    protected function defaultApprovalCount(): int
+    {
+        return 1; // Default to 1 approval needed if no specific role requirements are provided
+    }
+
+    public function getPendingRoles(): array
+    {
+        /** @var array $requiredApprovals */
+        $requiredApprovals = $this->required_approvals ?? [];
+        /** @var array $actualApprovals */
+        $actualApprovals = $this->approvals ?? [];
+
+        $pendingRoles = [];
+
+        foreach ($requiredApprovals as $role => $requiredCount) {
+            $actualCount = collect($actualApprovals)->where('role', $role)->count();
+            if ($actualCount < $requiredCount) {
+                $pendingRoles[$role] = $requiredCount - $actualCount;
+            }
+        }
+
+        return $pendingRoles;
     }
 
     public function toSearchableArray(): array

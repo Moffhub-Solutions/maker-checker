@@ -156,7 +156,7 @@ class RequestBuilder
      *
      * @throws Exception
      */
-    public function toExecute(string|Closure $executableAction, array $payload = []): self
+    public function toExecute(string|Closure $executableAction, array $payload = [], array $requiredApprovals = []): self
     {
         $this->assertRequestTypeIsNotSet();
         if ($executableAction instanceof Closure) {
@@ -174,6 +174,7 @@ class RequestBuilder
         $this->request->type = RequestType::EXECUTE;
         $this->request->executable = $executableAction;
         $this->request->payload = $payload;
+        $this->request->required_approvals = $requiredApprovals;
         $this->uniqueIdentifiers = $this->uniqueIdentifiers ?: $executable->uniqueBy();
 
         $this->setHooksFromExecutable($executable);

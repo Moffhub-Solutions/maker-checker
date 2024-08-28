@@ -31,6 +31,9 @@ return new class extends Migration
             $table->text('remarks')->nullable();
             $table->text('exception')->nullable();
 
+            $table->json('required_approvals')->nullable();
+            $table->json('approvals')->nullable();
+
             $table->timestamps();
         });
     }
