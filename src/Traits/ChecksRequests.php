@@ -11,7 +11,7 @@ trait ChecksRequests
 {
     public function approve(MakerCheckerRequest $request, ?string $remarks = null): MakerCheckerRequest
     {
-        return MakerChecker::approve($request, $this, $remarks);
+        return MakerChecker::approve($request, $this, $this->role, $remarks);
     }
 
     public function reject(MakerCheckerRequest $request, ?string $remarks = null): MakerCheckerRequest
