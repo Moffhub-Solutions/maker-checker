@@ -5,8 +5,12 @@
     "license": "MIT",
     "autoload": {
         "psr-4": {
-            "Moffhub\\MakerChecker\\": "src/",
-            "Tests\\": "tests/"
+            "Moffhub\\MakerChecker\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Moffhub\\MakerChecker\\Tests\\": "tests"
         }
     },
     "authors": [
@@ -17,7 +21,17 @@
     ],
     "minimum-stability": "stable",
     "require": {
+        "php": "^8.2",
+        "illuminate/support": "^11",
         "sourcetoad/enhanced-resources": "^7.0"
+    },
+    "require-dev": {
+        "laravel/pint": "^1.17",
+        "orchestra/testbench": "^9.2",
+        "phpunit/phpunit": "^11.2"
+    },
+    "config": {
+        "sort-packages": true
     },
     "extra": {
         "laravel": {
