@@ -55,17 +55,22 @@ Then, you can use the `makerChecker` method to create a new record.
                 ->setStatusCode(Response::HTTP_MULTI_STATUS);
         }
 ```
-## Approvble actions
+## Approvable actions
 
 This library supports create, delete, update and execute actions. You can create your own actions by extending the `ApprovableAction` class.
 
 This is configured by either calling
 
 for execute
+Additionally you can pass an array of roles that can approve the request and the number of approvals required for the request to be approved by each role
 ```php
 MakerChecker::request()->toExecute(
                     $approvableActionClass,
                     (array) $data,
+                    [
+                        'admin'=> 2,
+                        'client' => 3,
+                    ],
                 )
 ``` 
 or for create

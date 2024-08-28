@@ -33,7 +33,7 @@ interface MakerCheckerRequestInterface
     public function isOfType(RequestType $type): bool;
 
     /**
-     * @param Builder<Model> $query
+     * @param  Builder<Model>  $query
      *
      * @return Builder<Model>
      */

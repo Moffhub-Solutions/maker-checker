@@ -152,7 +152,7 @@ class RequestBuilder
     /**
      * Commence initiation of an execute request.
      *
-     * @param string|Closure $executableAction the class to execute, it must be an instance of ExecutableRequest
+     * @param  string|Closure  $executableAction  the class to execute, it must be an instance of ExecutableRequest
      *
      * @throws Exception
      */
