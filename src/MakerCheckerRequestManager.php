@@ -151,8 +151,8 @@ class MakerCheckerRequestManager
 
         $this->assertModelCanCheckRequests($checker);
 
-        if (!$request->isOfStatus(RequestStatus::PENDING)) {
-            throw RequestCannotBeChecked::create('Cannot act on a non-pending request.');
+        if (!$request->isOfStatus(RequestStatus::PENDING) || !$request->isOfStatus(RequestStatus::PARTIALLY_APPROVED)) {
+            throw RequestCannotBeChecked::create('Cannot act on a non-pending pr partially approved request.');
         }
 
         $requestExpirationInMinutes = data_get($this->configData, 'request_expiration_in_minutes');
