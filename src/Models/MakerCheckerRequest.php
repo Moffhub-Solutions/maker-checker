@@ -199,6 +199,10 @@ class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
             return $builder;
         }
 
+        if ($user->company_id) {
+            return $builder->where('team_id', '=', $user->company_id);
+        }
+
         return $builder->where('maker_id', '=', $user->getKey());
     }
 
