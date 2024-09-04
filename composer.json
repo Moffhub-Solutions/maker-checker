@@ -22,7 +22,7 @@
     "minimum-stability": "stable",
     "require": {
         "php": "^8.2",
-        "illuminate/support": "^11",
+        "illuminate/support": "^11.0",
         "sourcetoad/enhanced-resources": "^7.0"
     },
     "require-dev": {
