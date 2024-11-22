@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Moffhub\MakerChecker\Http\Resources;
 
-use App\Http\Resources\Resource;
-use App\Http\Resources\UserResource;
 use Moffhub\MakerChecker\Models\MakerCheckerRequest;
 use Sourcetoad\EnhancedResources\Formatting\Attributes\Format;
 
@@ -45,7 +43,7 @@ class MakerCheckerResource extends Resource
     public function simple(): array
     {
         return [
-            'id' => $this->resource->getKey(),
+            'id' => (string) $this->resource->getKey(),
             'description' => $this->resource->description,
             'status' => $this->resource->status->display(),
             'type' => $this->resource->type->display(),
