@@ -10,7 +10,7 @@
     },
     "autoload-dev": {
         "psr-4": {
-            "Moffhub\\MakerChecker\\Tests\\": "tests"
+            "Moffhub\\MakerChecker\\Tests\\": "tests/"
         }
     },
     "authors": [
