@@ -21,7 +21,7 @@ class UserResource extends Resource
             'id' => $this->resource->getRouteKey(),
             'name' => [
                 'first' => $this->resource->first_name,
-                'full' => $this->resource->first_name . ' ' . $this->resource->last_name,
+                'full' => $this->resource->first_name.' '.$this->resource->last_name,
                 'last' => $this->resource->last_name,
             ],
         ];
