@@ -6,9 +6,9 @@ namespace Moffhub\MakerChecker\Tests\Unit;
 
 use Moffhub\MakerChecker\Tests\BaseTestCase;
 
-class makerCheckerTest extends BaseTestCase
+class MakerCheckerTest extends BaseTestCase
 {
-    public function testCanCreateMakerChecker(): void
+    public function test_can_create_maker_checker(): void
     {
         // arrange
         // act
