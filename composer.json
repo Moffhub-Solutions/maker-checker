@@ -22,12 +22,12 @@
     "minimum-stability": "stable",
     "require": {
         "php": "^8.2",
-        "illuminate/support": "^11.0",
+        "illuminate/support": "^12.0",
         "sourcetoad/enhanced-resources": "^7.0"
     },
     "require-dev": {
         "laravel/pint": "^1.17",
-        "orchestra/testbench": "^9.2",
+        "orchestra/testbench": "^10.1",
         "phpstan/phpstan": "^1.12",
         "phpunit/phpunit": "^11.3"
     },
