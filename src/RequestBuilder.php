@@ -329,7 +329,7 @@ class RequestBuilder
         } catch (Throwable $e) {
             throw new RequestCouldNotBeInitiated("Error initiating request: {$e->getMessage()}", 0, $e);
         } finally {
-            $this->request = $this->createNewPendingRequest(); //reset it back to how it was
+            $this->request = $this->createNewPendingRequest(); // reset it back to how it was
             $this->hooks = [];
             $this->uniqueIdentifiers = [];
         }

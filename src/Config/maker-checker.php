@@ -21,8 +21,8 @@ return [
      * If it is left empty, any model will be able to initiate/approve/decline a request.
      */
     'whitelisted_models' => [
-        'maker' => [], //e.g [User::class]
-        'checker' => [], //e.g [Admin::class]
+        'maker' => [], // e.g [User::class]
+        'checker' => [], // e.g [Admin::class]
     ],
     /**
      * This configuration is fr users that are allowed to be both the maker and the checker of a request.
