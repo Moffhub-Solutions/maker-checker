@@ -12,3 +12,4 @@ parameters:
       - identifier: return.type
       - identifier: staticMethod.notFound
       - identifier: argument.templateType
+      - identifier: staticProperty.notFound

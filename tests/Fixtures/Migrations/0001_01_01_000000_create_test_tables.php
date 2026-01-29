@@ -27,10 +27,28 @@ return new class extends Migration
             $table->unsignedBigInteger('team_id')->nullable();
             $table->timestamps();
         });
+
+        Schema::create('articles', function (Blueprint $table) {
+            $table->id();
+            $table->string('title');
+            $table->text('content')->nullable();
+            $table->foreignId('user_id')->constrained()->onDelete('cascade');
+            $table->timestamps();
+        });
+
+        Schema::create('comments', function (Blueprint $table) {
+            $table->id();
+            $table->text('body');
+            $table->foreignId('user_id')->constrained()->onDelete('cascade');
+            $table->foreignId('post_id')->constrained()->onDelete('cascade');
+            $table->timestamps();
+        });
     }
 
     public function down(): void
     {
+        Schema::dropIfExists('comments');
+        Schema::dropIfExists('articles');
         Schema::dropIfExists('posts');
         Schema::dropIfExists('users');
     }
