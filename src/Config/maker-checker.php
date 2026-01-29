@@ -261,4 +261,28 @@ return [
     |
     */
     'config_cache_ttl' => env('MAKER_CHECKER_CONFIG_CACHE_TTL', 3600),
+
+    /*
+    |--------------------------------------------------------------------------
+    | API Routes Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Configure the API routes for maker-checker.
+    |
+    | - enabled: Set to false to disable automatic route registration.
+    |            You can then manually include routes or customize them.
+    | - prefix: URL prefix for all routes (default: 'api')
+    | - middleware: Array of middleware to apply to all routes
+    |
+    | Full routes will be: {prefix}/maker-checker/requests, etc.
+    |
+    | To customize routes, publish them:
+    | php artisan vendor:publish --tag=maker-checker-routes
+    |
+    */
+    'routes' => [
+        'enabled' => env('MAKER_CHECKER_ROUTES_ENABLED', true),
+        'prefix' => env('MAKER_CHECKER_ROUTES_PREFIX', 'api'),
+        'middleware' => ['api'],
+    ],
 ];
