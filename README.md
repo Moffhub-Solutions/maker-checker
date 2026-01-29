@@ -84,9 +84,62 @@ Post::withoutApprovalDo(function () {
 });
 ```
 
-### Option B: Manual Request Creation
+### Option B: Convenience Methods (Simple API)
 
-For more control, use the `MakerChecker` facade directly:
+Use the `MakerChecker` facade with convenience methods that auto-inject the authenticated user:
+
+```php
+use Moffhub\MakerChecker\Facades\MakerChecker;
+
+// Create a request (auto-injects auth user as maker)
+$request = MakerChecker::create(Post::class, ['title' => 'My Post']);
+
+// With custom description
+$request = MakerChecker::create(Post::class, ['title' => 'My Post'], 'Create a new blog post');
+
+// Update a model
+$request = MakerChecker::update($post, ['title' => 'Updated Title']);
+
+// Delete a model
+$request = MakerChecker::delete($post);
+
+// Execute a custom action
+$request = MakerChecker::execute(TransferFunds::class, ['amount' => 5000]);
+```
+
+Approve, reject, or cancel requests (also auto-injects auth user):
+
+```php
+// Approve (uses authenticated user)
+MakerChecker::approve($request);
+MakerChecker::approve($request, null, 'admin');           // With role
+MakerChecker::approve($request, null, 'admin', 'LGTM');  // With role and remarks
+
+// Or with explicit user
+MakerChecker::approve($request, $approver, 'admin');
+
+// Reject
+MakerChecker::reject($request);
+MakerChecker::reject($request, null, 'Missing information');
+
+// Cancel (only maker can cancel)
+MakerChecker::cancel($request);
+```
+
+You can also call these methods directly on the request model:
+
+```php
+$request->approve();                          // Uses auth user
+$request->approve(null, 'admin');             // With role
+$request->approve($user, 'admin', 'Approved'); // Explicit user
+
+$request->reject(null, 'Not approved');
+$request->cancel();
+```
+
+### Option C: Request Builder (Full Control)
+
+For advanced usage with hooks and custom configuration:
 
 ```php
 use Moffhub\MakerChecker\Facades\MakerChecker;
@@ -95,6 +148,9 @@ $request = MakerChecker::request()
     ->toCreate(Post::class, ['title' => 'My Post'])
     ->madeBy(auth()->user())
     ->description('Create a new blog post')
+    ->withApprovals(['editor' => 1, 'admin' => 1])
+    ->beforeApproval(fn($r) => Log::info('Approving...'))
+    ->afterApproval(fn($r) => Notification::send(...))
     ->save();
 ```
 
@@ -154,11 +210,21 @@ $request = MakerChecker::request()
 ```php
 use Moffhub\MakerChecker\Facades\MakerChecker;
 
-// Approve a request
-MakerChecker::approve($request, auth()->user(), 'admin', 'Looks good!');
+// Simple - uses authenticated user automatically
+MakerChecker::approve($request);
+MakerChecker::reject($request, null, 'Missing required information');
 
-// Reject a request
-MakerChecker::reject($request, auth()->user(), 'Missing required information');
+// With role (for multi-role approvals)
+MakerChecker::approve($request, null, 'admin', 'Looks good!');
+
+// With explicit user
+MakerChecker::approve($request, $approverUser, 'admin', 'Looks good!');
+
+// Or call directly on the request model
+$request->approve();
+$request->approve(null, 'admin');
+$request->reject(null, 'Not approved');
+$request->cancel(); // Only maker can cancel
 ```
 
 ## Request Types
@@ -621,6 +687,232 @@ Run the expiration command (add to scheduler):
 $schedule->command('maker-checker:expire-requests')->hourly();
 ```
 
+## Notifications
+
+The package can automatically notify approvers when a new request is pending, and notify makers when their request is approved or rejected.
+
+### Enabling Notifications
+
+```php
+// config/maker-checker.php
+'notifications' => [
+    'enabled' => true,
+    'channels' => ['mail', 'database'], // Notification channels
+    'notify_maker' => true,              // Notify maker of approval/rejection
+    'sequential' => false,               // See "Sequential Notifications" below
+    'user_model' => App\Models\User::class,
+    'role_attribute' => 'role',          // Attribute containing user's role
+],
+```
+
+### Finding Approvers by Role
+
+The package uses an `ApproverResolver` to find users who can approve requests. The default resolver queries users by role attribute:
+
+```php
+// Default behavior: finds users where role = 'admin'
+// When request requires ['admin' => 2], finds all users with role 'admin'
+```
+
+For more complex scenarios (Spatie permissions, team-based roles, etc.), implement your own resolver:
+
+```php
+use Moffhub\MakerChecker\Contracts\ApproverResolver;
+use Moffhub\MakerChecker\Models\MakerCheckerRequest;
+
+class CustomApproverResolver implements ApproverResolver
+{
+    public function getApproversForRole(MakerCheckerRequest $request, string $role): Collection
+    {
+        // Custom logic: Spatie permissions, team filtering, etc.
+        return User::role($role)
+            ->where('team_id', $request->team_id)
+            ->where('id', '!=', $request->maker_id)
+            ->get();
+    }
+
+    public function getAllApprovers(MakerCheckerRequest $request): Collection
+    {
+        // Get all users who can approve any role
+        $roles = array_keys($request->required_approvals ?? []);
+        return User::role($roles)->get();
+    }
+}
+
+// Register in AppServiceProvider
+$this->app->bind(ApproverResolver::class, CustomApproverResolver::class);
+```
+
+### Sequential Notifications
+
+By default, all required roles are notified at once. Enable sequential mode to notify roles one at a time:
+
+```php
+'notifications' => [
+    'sequential' => true,
+],
+```
+
+In sequential mode:
+1. First role is notified when request is created
+2. After that role approves, next role is notified
+3. Use `MakerChecker::notifyNextApprovers($request)` to manually trigger next notification
+
+```php
+// After partial approval, notify next approvers
+MakerChecker::approve($request, $user, 'editor');
+
+if ($request->isPartiallyApproved()) {
+    MakerChecker::notifyNextApprovers($request);
+}
+```
+
+### Custom Notification Classes
+
+Override the default notifications with your own:
+
+```php
+// config/maker-checker.php
+'notifications' => [
+    'pending_notification' => App\Notifications\CustomPendingNotification::class,
+    'approved_notification' => App\Notifications\CustomApprovedNotification::class,
+    'rejected_notification' => App\Notifications\CustomRejectedNotification::class,
+],
+```
+
+Your custom notification should accept a `MakerCheckerRequest` in its constructor:
+
+```php
+use Illuminate\Notifications\Notification;
+use Moffhub\MakerChecker\Models\MakerCheckerRequest;
+
+class CustomPendingNotification extends Notification
+{
+    public function __construct(
+        public MakerCheckerRequest $request,
+        public ?string $role = null
+    ) {}
+
+    public function via($notifiable): array
+    {
+        return ['mail', 'database', 'slack']; // Add any channels
+    }
+
+    public function toMail($notifiable): MailMessage
+    {
+        return (new MailMessage)
+            ->subject('Custom: Approval Needed')
+            ->line("Please review: {$this->request->description}")
+            ->action('Review', url("/approvals/{$this->request->code}"));
+    }
+
+    // Add toSlack(), toArray(), etc. as needed
+}
+```
+
+### Manual Notifications
+
+Trigger notifications manually when needed:
+
+```php
+// Notify all approvers about a pending request
+MakerChecker::notifyApprovers($request);
+
+// Notify with sequential mode (only first role)
+MakerChecker::notifyApprovers($request, sequential: true);
+
+// Notify next approvers after partial approval
+MakerChecker::notifyNextApprovers($request);
+
+// Access the notification service directly
+$service = MakerChecker::notifications();
+$service->notifyPendingApproval($request);
+$service->notifyRequestApproved($request);
+$service->notifyRequestRejected($request);
+```
+
+## Lifecycle Callbacks
+
+Register callbacks to execute at various points in the request lifecycle.
+
+### Config-Based Callbacks
+
+Define callbacks in the config file:
+
+```php
+// config/maker-checker.php
+'callbacks' => [
+    'on_initiated' => [
+        App\MakerChecker\Callbacks\LogNewRequest::class,
+        App\MakerChecker\Callbacks\SendSlackNotification::class,
+    ],
+    'after_approval' => [
+        App\MakerChecker\Callbacks\UpdateAuditLog::class,
+    ],
+    'after_rejection' => [
+        App\MakerChecker\Callbacks\NotifyManager::class,
+    ],
+    'on_failure' => [
+        App\MakerChecker\Callbacks\AlertOps::class,
+    ],
+],
+```
+
+Callback classes should implement `RequestCallback` or have a `handle` method:
+
+```php
+use Moffhub\MakerChecker\Contracts\RequestCallback;
+use Moffhub\MakerChecker\Models\MakerCheckerRequest;
+
+class LogNewRequest implements RequestCallback
+{
+    public function handle(MakerCheckerRequest $request): void
+    {
+        Log::info('New approval request', [
+            'code' => $request->code,
+            'type' => $request->type->value,
+            'maker' => $request->maker_id,
+        ]);
+    }
+}
+```
+
+### Programmatic Callbacks
+
+Register callbacks at runtime:
+
+```php
+// In a service provider or bootstrap file
+MakerChecker::callbacks()
+    ->onInitiated(function (MakerCheckerRequest $request) {
+        // Request was just created
+        Log::info('Request initiated', ['code' => $request->code]);
+    })
+    ->afterApproval(function (MakerCheckerRequest $request) {
+        // Request was fully approved and executed
+        Notification::send($request->maker, new RequestCompleted($request));
+    })
+    ->afterRejection(function (MakerCheckerRequest $request) {
+        // Request was rejected
+        event(new RequestRejectedEvent($request));
+    })
+    ->onFailure(function (MakerCheckerRequest $request) {
+        // Execution failed
+        Alert::critical("Request {$request->code} failed");
+    });
+```
+
+### Available Hooks
+
+| Hook | When Executed |
+|------|---------------|
+| `on_initiated` | After a new request is created |
+| `before_approval` | Before approval processing (per-request hooks only) |
+| `after_approval` | After request is fully approved and executed |
+| `before_rejection` | Before rejection processing (per-request hooks only) |
+| `after_rejection` | After request is rejected |
+| `on_failure` | When request execution fails |
+
 ## Testing
 
 ```bash
@@ -648,6 +940,11 @@ composer check-code  # Runs lint, phpstan, and tests
 | `config_driver` | `file` | `file` or `database` |
 | `cache_config` | `true` | Cache database configs |
 | `config_cache_ttl` | `3600` | Cache TTL in seconds |
+| `notifications.enabled` | `false` | Enable automatic notifications |
+| `notifications.channels` | `['mail', 'database']` | Notification delivery channels |
+| `notifications.notify_maker` | `true` | Notify maker on approval/rejection |
+| `notifications.sequential` | `false` | Notify roles one at a time |
+| `notifications.role_attribute` | `role` | User model attribute for role |
 
 ## License
 

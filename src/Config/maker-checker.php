@@ -285,4 +285,92 @@ return [
         'prefix' => env('MAKER_CHECKER_ROUTES_PREFIX', 'api'),
         'middleware' => ['api'],
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Notifications Configuration
+    |--------------------------------------------------------------------------
+    |
+    | Configure automatic notifications for pending approvals and request
+    | status changes. Notifications can be sent via email and/or database.
+    |
+    | To use notifications:
+    | 1. Set 'enabled' to true
+    | 2. Implement ApproverResolver to define how approvers are found by role
+    |    Or use the default resolver with proper user model and role attribute
+    |
+    | Sequential notifications: When true, only the first required role is
+    | notified initially. After they approve, the next role is notified.
+    |
+    */
+    'notifications' => [
+        // Enable/disable the notification system
+        'enabled' => env('MAKER_CHECKER_NOTIFICATIONS_ENABLED', false),
+
+        // Notification channels: 'mail', 'database', or both
+        'channels' => ['mail', 'database'],
+
+        // Notify the maker when their request is approved/rejected
+        'notify_maker' => true,
+
+        // Use sequential notifications (notify roles one at a time)
+        'sequential' => false,
+
+        // User model class for finding approvers (defaults to auth config)
+        'user_model' => null, // e.g., App\Models\User::class
+
+        // Attribute on user model that contains their role
+        'role_attribute' => 'role',
+
+        // Set to true if role_attribute is a JSON array column
+        'role_attribute_is_json' => false,
+
+        // Enable team scoping for notifications
+        'team_scoping' => false,
+
+        // Attribute on user model for team ID
+        'team_attribute' => 'team_id',
+
+        // URL template for action button in emails
+        // Use {id} and {code} placeholders
+        'action_url' => null, // e.g., 'https://app.example.com/approvals/{code}'
+
+        // Custom notification classes (optional)
+        'pending_notification' => \Moffhub\MakerChecker\Notifications\PendingApprovalNotification::class,
+        'approved_notification' => \Moffhub\MakerChecker\Notifications\RequestApprovedNotification::class,
+        'rejected_notification' => \Moffhub\MakerChecker\Notifications\RequestRejectedNotification::class,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Lifecycle Callbacks
+    |--------------------------------------------------------------------------
+    |
+    | Register callback classes to be executed at various points in the
+    | request lifecycle. These are in addition to any hooks defined on
+    | individual requests via the RequestBuilder.
+    |
+    | Callbacks must implement Moffhub\MakerChecker\Contracts\RequestCallback
+    | or have a public handle(MakerCheckerRequest $request) method.
+    |
+    | Example:
+    | 'callbacks' => [
+    |     'after_approval' => [
+    |         App\MakerChecker\Callbacks\SendSlackNotification::class,
+    |         App\MakerChecker\Callbacks\UpdateAuditLog::class,
+    |     ],
+    |     'on_initiated' => [
+    |         App\MakerChecker\Callbacks\NotifyApprovers::class,
+    |     ],
+    | ],
+    |
+    */
+    'callbacks' => [
+        'on_initiated' => [],
+        'before_approval' => [],
+        'after_approval' => [],
+        'before_rejection' => [],
+        'after_rejection' => [],
+        'on_failure' => [],
+    ],
 ];

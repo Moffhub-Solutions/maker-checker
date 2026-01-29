@@ -25,6 +25,8 @@ use Moffhub\MakerChecker\Exceptions\RequestCannotBeCancelled;
 use Moffhub\MakerChecker\Exceptions\RequestCannotBeChecked;
 use Moffhub\MakerChecker\Exceptions\RequestCouldNotBeProcessed;
 use Moffhub\MakerChecker\Models\MakerCheckerRequest;
+use Moffhub\MakerChecker\Services\CallbackService;
+use Moffhub\MakerChecker\Services\NotificationService;
 use Throwable;
 
 class MakerCheckerRequestManager
@@ -42,6 +44,102 @@ class MakerCheckerRequestManager
     public function request(): RequestBuilder
     {
         return $this->app[RequestBuilder::class];
+    }
+
+    /**
+     * Create a maker-checker request to create a new model.
+     *
+     * @param  class-string<Model>  $modelClass
+     * @param  array<string, mixed>  $attributes
+     */
+    public function create(string $modelClass, array $attributes, ?string $description = null): MakerCheckerRequest
+    {
+        $maker = $this->getAuthenticatedUser();
+
+        $builder = $this->request()
+            ->toCreate($modelClass, $attributes)
+            ->madeBy($maker);
+
+        if ($description !== null) {
+            $builder->description($description);
+        }
+
+        return $builder->save();
+    }
+
+    /**
+     * Create a maker-checker request to update an existing model.
+     *
+     * @param  array<string, mixed>  $attributes
+     */
+    public function update(Model $model, array $attributes, ?string $description = null): MakerCheckerRequest
+    {
+        $maker = $this->getAuthenticatedUser();
+
+        $builder = $this->request()
+            ->toUpdate($model, $attributes)
+            ->madeBy($maker);
+
+        if ($description !== null) {
+            $builder->description($description);
+        }
+
+        return $builder->save();
+    }
+
+    /**
+     * Create a maker-checker request to delete a model.
+     */
+    public function delete(Model $model, ?string $description = null): MakerCheckerRequest
+    {
+        $maker = $this->getAuthenticatedUser();
+
+        $builder = $this->request()
+            ->toDelete($model)
+            ->madeBy($maker);
+
+        if ($description !== null) {
+            $builder->description($description);
+        }
+
+        return $builder->save();
+    }
+
+    /**
+     * Create a maker-checker request to execute an action.
+     *
+     * @param  class-string  $executable
+     * @param  array<string, mixed>  $payload
+     */
+    public function execute(string $executable, array $payload = [], ?string $description = null): MakerCheckerRequest
+    {
+        $maker = $this->getAuthenticatedUser();
+
+        $builder = $this->request()
+            ->toExecute($executable, $payload)
+            ->madeBy($maker);
+
+        if ($description !== null) {
+            $builder->description($description);
+        }
+
+        return $builder->save();
+    }
+
+    /**
+     * Get the authenticated user.
+     *
+     * @throws \RuntimeException If no authenticated user is found
+     */
+    protected function getAuthenticatedUser(): Model
+    {
+        $user = $this->app['auth']->user();
+
+        if (!$user instanceof Model) {
+            throw new \RuntimeException('No authenticated user found. Please log in or pass a user explicitly.');
+        }
+
+        return $user;
     }
 
     /**
@@ -93,14 +191,53 @@ class MakerCheckerRequestManager
     }
 
     /**
+     * Get the notification service for manual notification control.
+     */
+    public function notifications(): NotificationService
+    {
+        return $this->app->make(NotificationService::class);
+    }
+
+    /**
+     * Get the callback service for programmatic callback registration.
+     */
+    public function callbacks(): CallbackService
+    {
+        return $this->app->make(CallbackService::class);
+    }
+
+    /**
+     * Manually notify approvers about a pending request.
+     *
+     * Useful when you want to trigger notifications outside the normal flow.
+     */
+    public function notifyApprovers(MakerCheckerRequest $request, bool $sequential = false): void
+    {
+        $this->notifications()->notifyPendingApproval($request, $sequential);
+    }
+
+    /**
+     * Notify the next set of approvers (for sequential approval workflows).
+     *
+     * Call this after a partial approval to notify the next required role.
+     */
+    public function notifyNextApprovers(MakerCheckerRequest $request): void
+    {
+        $this->notifications()->notifyNextApprovers($request);
+    }
+
+    /**
      * Approve a pending maker-checker request.
+     *
+     * If no approver is provided, the authenticated user is used.
      */
     public function approve(
         MakerCheckerRequest $request,
-        Model $approver,
+        ?Model $approver = null,
         ?string $role = null,
         ?string $remarks = null
     ): MakerCheckerRequest {
+        $approver = $approver ?? $this->getAuthenticatedUser();
         $this->assertRequestCanBeChecked($request, $approver);
 
         return DB::transaction(function () use ($request, $approver, $role, $remarks): \Moffhub\MakerChecker\Models\MakerCheckerRequest {
@@ -154,12 +291,15 @@ class MakerCheckerRequestManager
 
     /**
      * Reject a pending maker-checker request.
+     *
+     * If no rejector is provided, the authenticated user is used.
      */
     public function reject(
         MakerCheckerRequest $request,
-        Model $rejector,
+        ?Model $rejector = null,
         ?string $remarks = null,
     ): MakerCheckerRequest {
+        $rejector = $rejector ?? $this->getAuthenticatedUser();
         $this->assertRequestCanBeChecked($request, $rejector);
 
         return DB::transaction(function () use ($request, $rejector, $remarks): \Moffhub\MakerChecker\Models\MakerCheckerRequest {
@@ -202,12 +342,14 @@ class MakerCheckerRequestManager
      * Cancel a pending maker-checker request.
      *
      * Only the maker of the request can cancel it.
+     * If no canceller is provided, the authenticated user is used.
      */
     public function cancel(
         MakerCheckerRequest $request,
-        Model $canceller,
+        ?Model $canceller = null,
         ?string $remarks = null,
     ): MakerCheckerRequest {
+        $canceller = $canceller ?? $this->getAuthenticatedUser();
         $this->assertRequestCanBeCancelled($request, $canceller);
 
         return DB::transaction(function () use ($request, $canceller, $remarks): \Moffhub\MakerChecker\Models\MakerCheckerRequest {

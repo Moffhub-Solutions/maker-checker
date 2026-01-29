@@ -7,6 +7,7 @@ namespace Moffhub\MakerChecker\Tests\Fixtures\Models;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Notifications\Notifiable;
 use Moffhub\MakerChecker\Contracts\MakerCheckerUserContract;
 
 /**
@@ -18,6 +19,8 @@ use Moffhub\MakerChecker\Contracts\MakerCheckerUserContract;
  */
 class User extends Model implements Authenticatable, MakerCheckerUserContract
 {
+    use Notifiable;
+
     protected $guarded = [];
 
     public function posts(): HasMany

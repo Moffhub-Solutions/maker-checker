@@ -8,8 +8,15 @@ use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Moffhub\MakerChecker\Console\Commands\ExpireOverDuePendingRequests;
+use Moffhub\MakerChecker\Contracts\ApproverResolver;
+use Moffhub\MakerChecker\Events\RequestApproved;
+use Moffhub\MakerChecker\Events\RequestInitiated;
+use Moffhub\MakerChecker\Events\RequestRejected;
 use Moffhub\MakerChecker\Exceptions\InvalidRequestModelSet;
 use Moffhub\MakerChecker\Models\MakerCheckerRequest;
+use Moffhub\MakerChecker\Services\CallbackService;
+use Moffhub\MakerChecker\Services\DefaultApproverResolver;
+use Moffhub\MakerChecker\Services\NotificationService;
 
 class MakerCheckerServiceProvider extends ServiceProvider
 {
@@ -134,5 +141,51 @@ class MakerCheckerServiceProvider extends ServiceProvider
             fn(Application $app): \Moffhub\MakerChecker\MakerCheckerRequestManager => new MakerCheckerRequestManager($app));
         $this->app->bind(RequestBuilder::class, fn(Application $app): \Moffhub\MakerChecker\RequestBuilder => new RequestBuilder($app));
         $this->app->singleton(ConfigResolver::class, fn(Application $app): \Moffhub\MakerChecker\ConfigResolver => new ConfigResolver($app['config']['maker-checker']));
+
+        // Register the approver resolver (can be overridden by user)
+        $this->app->bind(ApproverResolver::class, DefaultApproverResolver::class);
+
+        // Register services
+        $this->app->singleton(CallbackService::class, fn(Application $app): CallbackService => new CallbackService($app));
+        $this->app->singleton(NotificationService::class, fn(Application $app): NotificationService => new NotificationService(
+            $app->make(ApproverResolver::class)
+        ));
+
+        // Register event listeners for automatic notifications
+        $this->registerEventListeners();
+    }
+
+    /**
+     * Register event listeners for notifications and callbacks.
+     */
+    protected function registerEventListeners(): void
+    {
+        // On request initiated - notify approvers
+        $this->app['events']->listen(RequestInitiated::class, function (RequestInitiated $event) {
+            // Execute config callbacks
+            $this->app->make(CallbackService::class)->executeOnInitiated($event->request);
+
+            // Send notifications to approvers
+            $sequential = config('maker-checker.notifications.sequential', false);
+            $this->app->make(NotificationService::class)->notifyPendingApproval($event->request, $sequential);
+        });
+
+        // On request approved - notify maker
+        $this->app['events']->listen(RequestApproved::class, function (RequestApproved $event) {
+            // Execute config callbacks
+            $this->app->make(CallbackService::class)->executeAfterApproval($event->request);
+
+            // Notify maker
+            $this->app->make(NotificationService::class)->notifyRequestApproved($event->request);
+        });
+
+        // On request rejected - notify maker
+        $this->app['events']->listen(RequestRejected::class, function (RequestRejected $event) {
+            // Execute config callbacks
+            $this->app->make(CallbackService::class)->executeAfterRejection($event->request);
+
+            // Notify maker
+            $this->app->make(NotificationService::class)->notifyRequestRejected($event->request);
+        });
     }
 }

@@ -14,6 +14,7 @@ use Moffhub\MakerChecker\Contracts\MakerCheckerRequestInterface;
 use Moffhub\MakerChecker\Contracts\MakerCheckerUserContract;
 use Moffhub\MakerChecker\Enums\RequestStatus;
 use Moffhub\MakerChecker\Enums\RequestType;
+use Moffhub\MakerChecker\Facades\MakerChecker;
 
 /**
  * Base maker-checker request model.
@@ -452,5 +453,47 @@ class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
     public function scopeForTeam(EloquentBuilder $query, int $teamId): EloquentBuilder
     {
         return $query->where('team_id', $teamId);
+    }
+
+    /**
+     * Approve this request.
+     *
+     * If no approver is provided, the authenticated user is used.
+     *
+     * @return $this
+     */
+    public function approve(?Model $approver = null, ?string $role = null, ?string $remarks = null): static
+    {
+        MakerChecker::approve($this, $approver, $role, $remarks);
+
+        return $this;
+    }
+
+    /**
+     * Reject this request.
+     *
+     * If no rejector is provided, the authenticated user is used.
+     *
+     * @return $this
+     */
+    public function reject(?Model $rejector = null, ?string $remarks = null): static
+    {
+        MakerChecker::reject($this, $rejector, $remarks);
+
+        return $this;
+    }
+
+    /**
+     * Cancel this request.
+     *
+     * If no canceller is provided, the authenticated user is used.
+     *
+     * @return $this
+     */
+    public function cancel(?Model $canceller = null, ?string $remarks = null): static
+    {
+        MakerChecker::cancel($this, $canceller, $remarks);
+
+        return $this;
     }
 }
