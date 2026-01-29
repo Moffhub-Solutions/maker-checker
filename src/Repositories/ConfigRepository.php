@@ -8,6 +8,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Moffhub\MakerChecker\Enums\RequestType;
 use Moffhub\MakerChecker\Models\MakerCheckerConfig;
+use Moffhub\MakerChecker\Services\ConditionEvaluator;
 
 /**
  * Repository for managing maker-checker configurations in the database.
@@ -135,6 +136,107 @@ class ConfigRepository
         }
 
         return $query->distinct()->pluck('configurable_type');
+    }
+
+    // =========================================================================
+    // Conditional Config Methods
+    // =========================================================================
+
+    /**
+     * Get the matching config for a model, action, and payload.
+     * Uses "first match wins" strategy with priority ordering.
+     *
+     * @param  array<string, mixed>  $payload  The request payload for condition evaluation
+     */
+    public function getMatchingConfig(
+        string $modelClass,
+        RequestType $action,
+        array $payload = [],
+        ?int $teamId = null
+    ): ?MakerCheckerConfig {
+        $configs = $this->getCandidateConfigs($modelClass, $action, $teamId);
+
+        $evaluator = new ConditionEvaluator;
+
+        foreach ($configs as $config) {
+            if ($evaluator->evaluate($config->conditions, $payload)) {
+                return $config;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Get the matching config for an executable and payload.
+     *
+     * @param  array<string, mixed>  $payload  The request payload for condition evaluation
+     */
+    public function getMatchingExecutableConfig(
+        string $executableClass,
+        array $payload = [],
+        ?int $teamId = null
+    ): ?MakerCheckerConfig {
+        $configs = MakerCheckerConfig::query()
+            ->forExecutable($executableClass)
+            ->forTeam($teamId)
+            ->active()
+            ->orderByDesc('priority')
+            ->orderByRaw('team_id IS NULL')
+            ->get();
+
+        $evaluator = new ConditionEvaluator;
+
+        foreach ($configs as $config) {
+            if ($evaluator->evaluate($config->conditions, $payload)) {
+                return $config;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Get all candidate configs for a model/action, ordered by priority DESC.
+     *
+     * @return Collection<int, MakerCheckerConfig>
+     */
+    public function getCandidateConfigs(
+        string $modelClass,
+        RequestType $action,
+        ?int $teamId = null
+    ): Collection {
+        $cacheKey = $this->getCandidatesCacheKey($modelClass, $action->value, $teamId);
+
+        if ($this->cacheEnabled && Cache::has($cacheKey)) {
+            return Cache::get($cacheKey);
+        }
+
+        $configs = MakerCheckerConfig::query()
+            ->forModel($modelClass)
+            ->forAction($action)
+            ->forTeam($teamId)
+            ->active()
+            ->orderByDesc('priority')  // Higher priority first
+            ->orderByRaw('team_id IS NULL')  // Team-specific before global
+            ->orderByRaw('action IS NULL')   // Specific action before "all actions"
+            ->get();
+
+        if ($this->cacheEnabled) {
+            Cache::put($cacheKey, $configs, $this->cacheTtl);
+        }
+
+        return $configs;
+    }
+
+    /**
+     * Generate cache key for candidate configs.
+     */
+    protected function getCandidatesCacheKey(string $configurableType, string $action, ?int $teamId): string
+    {
+        $teamPart = $teamId !== null ? "team:{$teamId}" : 'global';
+
+        return "{$this->cachePrefix}candidates:{$configurableType}:{$action}:{$teamPart}";
     }
 
     // =========================================================================
@@ -365,6 +467,8 @@ class ConfigRepository
                 'action' => $config->action,
                 'approvals' => $config->approvals,
                 'unique_fields' => $config->unique_fields,
+                'conditions' => $config->conditions,
+                'priority' => $config->priority,
                 'team_id' => $config->team_id,
                 'description' => $config->description,
                 'is_active' => $config->is_active,
@@ -400,6 +504,14 @@ class ConfigRepository
             );
             Cache::forget($cacheKey);
 
+            // Clear candidate configs cache
+            $candidatesCacheKey = $this->getCandidatesCacheKey(
+                $config->configurable_type,
+                $action->value,
+                $config->team_id
+            );
+            Cache::forget($candidatesCacheKey);
+
             // Also clear global (null team) cache
             if ($config->team_id !== null) {
                 $globalCacheKey = $this->getCacheKey(
@@ -408,6 +520,13 @@ class ConfigRepository
                     null
                 );
                 Cache::forget($globalCacheKey);
+
+                $globalCandidatesCacheKey = $this->getCandidatesCacheKey(
+                    $config->configurable_type,
+                    $action->value,
+                    null
+                );
+                Cache::forget($globalCandidatesCacheKey);
             }
         }
     }

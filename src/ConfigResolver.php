@@ -59,10 +59,16 @@ class ConfigResolver
     /**
      * Get the approval requirements for a model and action.
      *
-     * @return array<string, int>
+     * @param  array<string, mixed>  $payload  The request payload for conditional config matching
+     * @return array<string, int>|array{roles?: array<string, int>, users?: array<string>}
      */
-    public function getApprovals(string $modelClass, RequestType $action, ?string $executable = null, ?int $teamId = null): array
-    {
+    public function getApprovals(
+        string $modelClass,
+        RequestType $action,
+        ?string $executable = null,
+        ?int $teamId = null,
+        array $payload = []
+    ): array {
         // 1. Check if model implements MakerCheckerConfigurable
         if ($this->implementsConfigurable($modelClass)) {
             /** @var class-string<MakerCheckerConfigurable> $modelClass */
@@ -74,7 +80,7 @@ class ConfigResolver
 
         // 2. Check database config (if driver is 'database')
         if ($this->usesDatabaseDriver()) {
-            $dbConfig = $this->getFromDatabase($modelClass, $action, $executable, $teamId);
+            $dbConfig = $this->getFromDatabase($modelClass, $action, $executable, $teamId, $payload);
             if ($dbConfig && $dbConfig->getApprovals() !== []) {
                 return $dbConfig->getApprovals();
             }
@@ -107,10 +113,16 @@ class ConfigResolver
     /**
      * Get the unique fields for a model and action.
      *
+     * @param  array<string, mixed>  $payload  The request payload for conditional config matching
      * @return array<string>
      */
-    public function getUniqueFields(string $modelClass, RequestType $action, ?string $executable = null, ?int $teamId = null): array
-    {
+    public function getUniqueFields(
+        string $modelClass,
+        RequestType $action,
+        ?string $executable = null,
+        ?int $teamId = null,
+        array $payload = []
+    ): array {
         // 1. Check if model implements MakerCheckerConfigurable
         if ($this->implementsConfigurable($modelClass)) {
             /** @var class-string<MakerCheckerConfigurable> $modelClass */
@@ -122,7 +134,7 @@ class ConfigResolver
 
         // 2. Check database config (if driver is 'database')
         if ($this->usesDatabaseDriver()) {
-            $dbConfig = $this->getFromDatabase($modelClass, $action, $executable, $teamId);
+            $dbConfig = $this->getFromDatabase($modelClass, $action, $executable, $teamId, $payload);
             if ($dbConfig && $dbConfig->getUniqueFields() !== []) {
                 return $dbConfig->getUniqueFields();
             }
@@ -204,18 +216,21 @@ class ConfigResolver
 
     /**
      * Get config from database.
+     *
+     * @param  array<string, mixed>  $payload  The request payload for conditional config matching
      */
     protected function getFromDatabase(
         string $modelClass,
         RequestType $action,
         ?string $executable,
-        ?int $teamId
+        ?int $teamId,
+        array $payload = []
     ): ?MakerCheckerConfig {
         if ($action === RequestType::EXECUTE && $executable) {
-            return $this->repository()->getForExecutable($executable, $teamId);
+            return $this->repository()->getMatchingExecutableConfig($executable, $payload, $teamId);
         }
 
-        return $this->repository()->getForModel($modelClass, $action, $teamId);
+        return $this->repository()->getMatchingConfig($modelClass, $action, $payload, $teamId);
     }
 
     /**

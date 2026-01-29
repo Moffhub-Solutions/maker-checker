@@ -10,6 +10,7 @@ use Illuminate\Routing\Controller;
 use Moffhub\MakerChecker\Enums\RequestType;
 use Moffhub\MakerChecker\Models\MakerCheckerConfig;
 use Moffhub\MakerChecker\Repositories\ConfigRepository;
+use Moffhub\MakerChecker\Services\ConditionEvaluator;
 
 /**
  * API Controller for managing maker-checker configurations.
@@ -64,10 +65,14 @@ class MakerCheckerConfigController extends Controller
      *
      * @bodyParam configurable_type string required The model or executable class name
      * @bodyParam action string The action type (create, update, delete, execute) or null for all
-     * @bodyParam approvals object Role-based approval requirements ['role' => count] (legacy format)
-     * @bodyParam approvals.roles object Role-based approval requirements ['role' => count] (new format)
+     * @bodyParam approvals object Approval requirements
+     * @bodyParam approvals.roles object Role-based approval requirements ['role' => count]
      * @bodyParam approvals.users array User emails or IDs required to approve
      * @bodyParam unique_fields array Fields to check for uniqueness
+     * @bodyParam conditions object Conditional rules for when this config applies
+     * @bodyParam conditions.mode string Logical operator: 'all' (AND) or 'any' (OR)
+     * @bodyParam conditions.rules array Array of condition rules
+     * @bodyParam priority integer Evaluation order (higher = evaluated first, default: 0)
      * @bodyParam team_id integer Optional team ID for multi-tenant configs
      * @bodyParam description string Optional human-readable description
      */
@@ -79,20 +84,38 @@ class MakerCheckerConfigController extends Controller
             'approvals' => 'nullable|array',
             'unique_fields' => 'nullable|array',
             'unique_fields.*' => 'string',
+            'conditions' => 'nullable|array',
+            'priority' => 'nullable|integer|min:0|max:10000',
             'team_id' => 'nullable|integer',
             'description' => 'nullable|string|max:500',
         ]);
 
+        // Validate conditions structure if provided
+        $conditions = $request->input('conditions');
+        if ($conditions !== null) {
+            $evaluator = new ConditionEvaluator;
+            $errors = $evaluator->validate($conditions);
+            if ($errors !== []) {
+                return response()->json([
+                    'message' => 'Invalid conditions structure',
+                    'errors' => ['conditions' => $errors],
+                ], 422);
+            }
+        }
+
         $approvals = $this->normalizeApprovals($request->input('approvals', []));
 
-        $config = $this->repository->upsertForModel(
-            $request->input('configurable_type'),
-            $request->input('action'),
-            $approvals,
-            $request->input('unique_fields', []),
-            $request->input('team_id'),
-            $request->input('description')
-        );
+        $config = $this->repository->create([
+            'configurable_type' => $request->input('configurable_type'),
+            'action' => $request->input('action'),
+            'approvals' => $approvals,
+            'unique_fields' => $request->input('unique_fields', []),
+            'conditions' => $conditions,
+            'priority' => $request->input('priority', 0),
+            'team_id' => $request->input('team_id'),
+            'description' => $request->input('description'),
+            'is_active' => true,
+        ]);
 
         return response()->json([
             'message' => 'Configuration created successfully',
@@ -113,10 +136,14 @@ class MakerCheckerConfigController extends Controller
     /**
      * Update a configuration.
      *
-     * @bodyParam approvals object Role-based approval requirements ['role' => count] (legacy format)
-     * @bodyParam approvals.roles object Role-based approval requirements ['role' => count] (new format)
+     * @bodyParam approvals object Approval requirements
+     * @bodyParam approvals.roles object Role-based approval requirements ['role' => count]
      * @bodyParam approvals.users array User emails or IDs required to approve
      * @bodyParam unique_fields array Fields to check for uniqueness
+     * @bodyParam conditions object Conditional rules for when this config applies
+     * @bodyParam conditions.mode string Logical operator: 'all' (AND) or 'any' (OR)
+     * @bodyParam conditions.rules array Array of condition rules
+     * @bodyParam priority integer Evaluation order (higher = evaluated first)
      * @bodyParam description string Optional human-readable description
      * @bodyParam is_active boolean Whether the config is active
      */
@@ -126,6 +153,8 @@ class MakerCheckerConfigController extends Controller
             'approvals' => 'nullable|array',
             'unique_fields' => 'nullable|array',
             'unique_fields.*' => 'string',
+            'conditions' => 'nullable|array',
+            'priority' => 'nullable|integer|min:0|max:10000',
             'description' => 'nullable|string|max:500',
             'is_active' => 'nullable|boolean',
         ]);
@@ -138,6 +167,25 @@ class MakerCheckerConfigController extends Controller
 
         if ($request->has('unique_fields')) {
             $updateData['unique_fields'] = $request->input('unique_fields');
+        }
+
+        if ($request->has('conditions')) {
+            $conditions = $request->input('conditions');
+            if ($conditions !== null) {
+                $evaluator = new ConditionEvaluator;
+                $errors = $evaluator->validate($conditions);
+                if ($errors !== []) {
+                    return response()->json([
+                        'message' => 'Invalid conditions structure',
+                        'errors' => ['conditions' => $errors],
+                    ], 422);
+                }
+            }
+            $updateData['conditions'] = $conditions;
+        }
+
+        if ($request->has('priority')) {
+            $updateData['priority'] = $request->input('priority');
         }
 
         if ($request->has('description')) {
@@ -270,6 +318,65 @@ class MakerCheckerConfigController extends Controller
     }
 
     /**
+     * Test conditions against a sample payload.
+     *
+     * This endpoint evaluates all configs for a model/action against a test payload
+     * and shows which config would match, useful for debugging conditional rules.
+     *
+     * @bodyParam configurable_type string required The model or executable class
+     * @bodyParam action string required The action type (create, update, delete, execute)
+     * @bodyParam payload object required The test payload to evaluate
+     * @bodyParam team_id integer Optional team ID
+     */
+    public function testConditions(Request $request): JsonResponse
+    {
+        $request->validate([
+            'configurable_type' => 'required|string',
+            'action' => 'required|string|in:create,update,delete,execute',
+            'payload' => 'required|array',
+            'team_id' => 'nullable|integer',
+        ]);
+
+        $configs = $this->repository->getCandidateConfigs(
+            $request->input('configurable_type'),
+            RequestType::from($request->input('action')),
+            $request->input('team_id')
+        );
+
+        $evaluator = new ConditionEvaluator;
+        $payload = $request->input('payload');
+
+        $results = $configs->map(function (MakerCheckerConfig $config) use ($evaluator, $payload) {
+            return [
+                'config_id' => $config->id,
+                'priority' => $config->priority,
+                'description' => $config->description,
+                'conditions' => $config->conditions,
+                'matches' => $evaluator->evaluate($config->conditions, $payload),
+                'approvals' => $config->getApprovals(),
+            ];
+        });
+
+        $matchingConfig = $configs->first(fn($config) => $evaluator->evaluate($config->conditions, $payload));
+
+        return response()->json([
+            'payload' => $payload,
+            'evaluated_configs' => $results,
+            'matching_config' => $matchingConfig ? $this->formatConfig($matchingConfig) : null,
+        ]);
+    }
+
+    /**
+     * Get supported condition operators.
+     */
+    public function operators(): JsonResponse
+    {
+        return response()->json([
+            'data' => ConditionEvaluator::getSupportedOperators(),
+        ]);
+    }
+
+    /**
      * Format a config for API response.
      *
      * @return array<string, mixed>
@@ -287,6 +394,9 @@ class MakerCheckerConfigController extends Controller
             'user_approvals' => $config->getUserApprovals(),
             'requires_user_approvals' => $config->requiresUserApprovals(),
             'unique_fields' => $config->getUniqueFields(),
+            'conditions' => $config->getConditions(),
+            'has_conditions' => $config->hasConditions(),
+            'priority' => $config->getPriority(),
             'is_active' => $config->is_active,
             'team_id' => $config->team_id,
             'description' => $config->description,

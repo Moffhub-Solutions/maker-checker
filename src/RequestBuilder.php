@@ -430,11 +430,14 @@ class RequestBuilder
         $executableClass = is_string($request->executable) ? $request->executable : null;
 
         // Auto-resolve approvals from config if not explicitly set
+        // Pass payload for conditional config matching
         if (!$this->approvalsSet && $request->subject_type) {
             $approvals = $this->configResolver->getApprovals(
                 $request->subject_type,
                 $request->type,
-                $executableClass
+                $executableClass,
+                $request->team_id,
+                $request->payload ?? []
             );
             if ($approvals !== []) {
                 $request->required_approvals = $approvals;
@@ -442,11 +445,14 @@ class RequestBuilder
         }
 
         // Auto-resolve unique identifiers from config if not explicitly set
+        // Pass payload for conditional config matching
         if (!$this->uniqueIdentifiersSet && $request->subject_type) {
             $uniqueFields = $this->configResolver->getUniqueFields(
                 $request->subject_type,
                 $request->type,
-                $executableClass
+                $executableClass,
+                $request->team_id,
+                $request->payload ?? []
             );
             if ($uniqueFields !== []) {
                 $this->uniqueIdentifiers = $uniqueFields;

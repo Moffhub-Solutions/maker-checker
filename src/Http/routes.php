@@ -44,8 +44,10 @@ Route::prefix('maker-checker')->group(function () {
     // Config management routes (for database driver)
     Route::get('configs/actions', [MakerCheckerConfigController::class, 'actions']);
     Route::get('configs/types', [MakerCheckerConfigController::class, 'types']);
+    Route::get('configs/operators', [MakerCheckerConfigController::class, 'operators']);
     Route::get('configs/export', [MakerCheckerConfigController::class, 'export']);
     Route::post('configs/import', [MakerCheckerConfigController::class, 'import']);
+    Route::post('configs/test-conditions', [MakerCheckerConfigController::class, 'testConditions']);
     Route::post('configs/{config}/enable', [MakerCheckerConfigController::class, 'enable']);
     Route::post('configs/{config}/disable', [MakerCheckerConfigController::class, 'disable']);
     Route::apiResource('configs', MakerCheckerConfigController::class);

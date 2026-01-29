@@ -7,6 +7,7 @@ namespace Moffhub\MakerChecker\Models;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Moffhub\MakerChecker\Enums\RequestType;
+use Moffhub\MakerChecker\Services\ConditionEvaluator;
 
 /**
  * Database-driven configuration for maker-checker approval requirements.
@@ -22,6 +23,8 @@ use Moffhub\MakerChecker\Enums\RequestType;
  * @property string|null $action RequestType value (create, update, delete, execute) or null for all actions
  * @property array{roles?: array<string, int>, users?: array<string>} $approvals Approval requirements
  * @property array<string> $unique_fields Fields to check for uniqueness
+ * @property array<string, mixed>|null $conditions Conditional rules for when this config applies
+ * @property int $priority Evaluation order (higher = evaluated first)
  * @property bool $is_active Whether this config is active
  * @property int|null $team_id Optional team ID for multi-tenant configs
  * @property array<string, mixed>|null $metadata Additional configuration data
@@ -34,6 +37,9 @@ use Moffhub\MakerChecker\Enums\RequestType;
  * @method static Builder<static> forAction(RequestType|string|null $action)
  * @method static Builder<static> active()
  * @method static Builder<static> forTeam(?int $teamId)
+ * @method static Builder<static> byPriority()
+ * @method static Builder<static> withConditions()
+ * @method static Builder<static> withoutConditions()
  * @method static static create(array<string, mixed> $attributes = [])
  * @method static static firstOrCreate(array<string, mixed> $attributes = [], array<string, mixed> $values = [])
  * @method static static updateOrCreate(array<string, mixed> $attributes, array<string, mixed> $values = [])
@@ -47,14 +53,18 @@ class MakerCheckerConfig extends Model
     protected $casts = [
         'approvals' => 'array',
         'unique_fields' => 'array',
+        'conditions' => 'array',
         'metadata' => 'array',
         'is_active' => 'boolean',
         'team_id' => 'integer',
+        'priority' => 'integer',
     ];
 
     protected $attributes = [
         'approvals' => '[]',
         'unique_fields' => '[]',
+        'conditions' => null,
+        'priority' => 0,
         'is_active' => true,
     ];
 
@@ -133,6 +143,39 @@ class MakerCheckerConfig extends Model
         });
     }
 
+    /**
+     * Scope to order by priority descending.
+     *
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
+    public function scopeByPriority(Builder $query): Builder
+    {
+        return $query->orderByDesc('priority');
+    }
+
+    /**
+     * Scope to filter configs with conditions.
+     *
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
+    public function scopeWithConditions(Builder $query): Builder
+    {
+        return $query->whereNotNull('conditions');
+    }
+
+    /**
+     * Scope to filter configs without conditions (default/fallback).
+     *
+     * @param  Builder<static>  $query
+     * @return Builder<static>
+     */
+    public function scopeWithoutConditions(Builder $query): Builder
+    {
+        return $query->whereNull('conditions');
+    }
+
     // =========================================================================
     // Helper Methods
     // =========================================================================
@@ -183,6 +226,44 @@ class MakerCheckerConfig extends Model
     public function getUniqueFields(): array
     {
         return $this->unique_fields ?? [];
+    }
+
+    /**
+     * Check if this config has conditions.
+     */
+    public function hasConditions(): bool
+    {
+        return $this->conditions !== null && ! empty($this->conditions['rules'] ?? []);
+    }
+
+    /**
+     * Get the conditions array.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function getConditions(): ?array
+    {
+        return $this->conditions;
+    }
+
+    /**
+     * Get the priority value.
+     */
+    public function getPriority(): int
+    {
+        return $this->priority ?? 0;
+    }
+
+    /**
+     * Check if this config matches a given payload.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    public function matchesPayload(array $payload): bool
+    {
+        $evaluator = new ConditionEvaluator;
+
+        return $evaluator->evaluate($this->conditions, $payload);
     }
 
     /**
