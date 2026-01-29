@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Moffhub\MakerChecker\Http\Resources;
 
+use Illuminate\Database\Eloquent\Model;
 use Moffhub\MakerChecker\Models\MakerCheckerRequest;
 use Sourcetoad\EnhancedResources\Formatting\Attributes\Format;
 
@@ -35,7 +36,14 @@ class MakerCheckerResource extends Resource
             'checker_type' => $this->resource->checker_type,
             'checker_id' => $this->resource->checker_id,
             'checked_at' => $this->resource->checked_at?->toIso8601ZuluString(),
-            'maker' => UserResource::make($this->resource->maker)->format(UserResource::SIMPLE),
+            'maker' => $this->formatUser($this->resource->maker),
+            'checker' => $this->formatUser($this->resource->checker),
+            'required_approvals' => $this->resource->required_approvals ?? [],
+            'current_approvals' => $this->resource->approvals ?? [],
+            'pending_roles' => $this->resource->getPendingRoles(),
+            'pending_users' => $this->resource->getPendingUsers(),
+            'requires_user_approvals' => $this->resource->requiresUserApprovals(),
+            'is_fully_approved' => $this->resource->hasMetApprovalThreshold(),
         ];
     }
 
@@ -48,5 +56,31 @@ class MakerCheckerResource extends Resource
             'status' => $this->resource->status->display(),
             'type' => $this->resource->type->display(),
         ];
+    }
+
+    /**
+     * Format a user model using the configured resource class.
+     */
+    protected function formatUser(?Model $user): mixed
+    {
+        if (!$user instanceof \Illuminate\Database\Eloquent\Model) {
+            return null;
+        }
+
+        $resourceClass = config('maker-checker.user_resource');
+
+        if ($resourceClass && class_exists($resourceClass)) {
+            $resource = $resourceClass::make($user);
+
+            // Check if the resource has a SIMPLE format method
+            if (defined("$resourceClass::SIMPLE")) {
+                return $resource->format($resourceClass::SIMPLE);
+            }
+
+            return $resource;
+        }
+
+        // Default to built-in UserResource
+        return UserResource::make($user)->format(UserResource::SIMPLE);
     }
 }

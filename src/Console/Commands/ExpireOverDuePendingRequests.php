@@ -7,36 +7,59 @@ namespace Moffhub\MakerChecker\Console\Commands;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Moffhub\MakerChecker\Enums\RequestStatus;
-use Moffhub\MakerChecker\Models\MakerCheckerRequest;
+use Moffhub\MakerChecker\MakerCheckerServiceProvider;
 
 class ExpireOverDuePendingRequests extends Command
 {
-    protected $signature = 'expire-overdue-requests';
+    protected $signature = 'maker-checker:expire-overdue
+                            {--dry-run : Show what would be expired without actually expiring}';
 
-    protected $description = 'identify and expire all overdue pending requests.';
-
-    public function __construct()
-    {
-        parent::__construct();
-    }
+    protected $description = 'Identify and expire all overdue pending and partially approved requests.';
 
     public function handle(): int
     {
         $expirationInMinutes = config('maker-checker.request_expiration_in_minutes');
 
         if (!$expirationInMinutes) {
-            $this->error('A value needs to be set for the `request_expiration_in_minutes` configuration for this command to be effected');
+            $this->error('A value needs to be set for the `request_expiration_in_minutes` configuration for this command to be effective.');
 
-            return 0;
+            return self::FAILURE;
         }
 
-        MakerCheckerRequest::query()->where('status', RequestStatus::PENDING)
-            ->where('created_at', '<=', Carbon::now()->subMinutes($expirationInMinutes))
-            ->update(['status' => RequestStatus::EXPIRED]);
+        $requestModel = MakerCheckerServiceProvider::getRequestModelClass();
+        $cutoffTime = Carbon::now()->subMinutes((int) $expirationInMinutes);
 
-        $this->info('Pending requests marked as expired successfully.');
+        $query = $requestModel::query()
+            ->whereIn('status', [RequestStatus::PENDING, RequestStatus::PARTIALLY_APPROVED])
+            ->where('created_at', '<=', $cutoffTime);
 
-        return 0;
+        $count = $query->count();
+
+        if ($count === 0) {
+            $this->info('No overdue requests found.');
+
+            return self::SUCCESS;
+        }
+
+        if ($this->option('dry-run')) {
+            $this->info("Would expire {$count} overdue request(s).");
+            $this->table(
+                ['ID', 'Code', 'Status', 'Created At'],
+                $query->get(['id', 'code', 'status', 'created_at'])->map(fn($r): array => [
+                    $r->id,
+                    $r->code,
+                    $r->status->display(),
+                    $r->created_at->toDateTimeString(),
+                ])->toArray()
+            );
+
+            return self::SUCCESS;
+        }
+
+        $query->update(['status' => RequestStatus::EXPIRED]);
+
+        $this->info("{$count} pending/partially approved request(s) marked as expired successfully.");
+
+        return self::SUCCESS;
     }
-
 }
