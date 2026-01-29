@@ -340,6 +340,97 @@ $request->getPendingRoles();         // ['admin' => 1, ...] remaining
 $request->hasMetApprovalThreshold(); // true/false
 ```
 
+## User-Specific Approvals
+
+In addition to role-based approvals, you can require specific users to approve a request. This is useful when you need approval from a particular person regardless of their role.
+
+### Requiring Specific Users
+
+Specify users by email or ID:
+
+```php
+// Require approval from a specific user by email
+MakerChecker::request()
+    ->toCreate(Contract::class, $data)
+    ->requiringUsersToApprove(['cfo@company.com'])
+    ->madeBy(auth()->user())
+    ->save();
+
+// Require approval from multiple specific users
+MakerChecker::request()
+    ->toCreate(Contract::class, $data)
+    ->requiringUsersToApprove(['cfo@company.com', 'ceo@company.com'])
+    ->madeBy(auth()->user())
+    ->save();
+
+// Require approval from user by ID
+MakerChecker::request()
+    ->toCreate(Contract::class, $data)
+    ->requiringUsersToApprove([(string) $cfoUser->id])
+    ->madeBy(auth()->user())
+    ->save();
+```
+
+### Combining Roles and Users
+
+Require both role-based and user-specific approvals:
+
+```php
+// Requires 1 admin approval AND approval from the CFO
+MakerChecker::request()
+    ->toCreate(Contract::class, $data)
+    ->withRoleAndUserApprovals(
+        roles: ['admin' => 1],
+        users: ['cfo@company.com']
+    )
+    ->madeBy(auth()->user())
+    ->save();
+```
+
+### User Validation
+
+By default, the package validates that all specified users exist in the system before creating the request:
+
+```php
+// This will throw an exception if the user doesn't exist
+MakerChecker::request()
+    ->toCreate(Contract::class, $data)
+    ->requiringUsersToApprove(['nonexistent@company.com'])
+    ->madeBy(auth()->user())
+    ->save();
+// Throws: RequestCouldNotBeInitiated
+
+// Disable validation if needed (not recommended)
+MakerChecker::request()
+    ->toCreate(Contract::class, $data)
+    ->requiringUsersToApprove(['future@company.com'], validateExistence: false)
+    ->madeBy(auth()->user())
+    ->save();
+```
+
+### Checking Pending Users
+
+```php
+$request->requiresUserApprovals();   // true if users are required
+$request->getPendingUsers();         // ['cfo@company.com', ...] remaining
+```
+
+### Approval Flow
+
+When a user-specific approval is required, only the specified users can approve:
+
+```php
+$request = MakerChecker::request()
+    ->toCreate(Contract::class, $data)
+    ->requiringUsersToApprove(['cfo@company.com'])
+    ->madeBy(auth()->user())
+    ->save();
+
+// Only the CFO can approve - other users will get an error
+MakerChecker::approve($request, $cfoUser, 'user'); // Works
+MakerChecker::approve($request, $otherUser);       // Throws exception
+```
+
 ## Configuration
 
 ### Model-Based Configuration
@@ -717,6 +808,8 @@ The package uses an `ApproverResolver` to find users who can approve requests. T
 For more complex scenarios (Spatie permissions, team-based roles, etc.), implement your own resolver:
 
 ```php
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Collection;
 use Moffhub\MakerChecker\Contracts\ApproverResolver;
 use Moffhub\MakerChecker\Models\MakerCheckerRequest;
 
@@ -733,9 +826,44 @@ class CustomApproverResolver implements ApproverResolver
 
     public function getAllApprovers(MakerCheckerRequest $request): Collection
     {
-        // Get all users who can approve any role
-        $roles = array_keys($request->required_approvals ?? []);
-        return User::role($roles)->get();
+        // Get all users who can approve any role or are specifically required
+        $requiredApprovals = $request->required_approvals ?? [];
+        $roles = $requiredApprovals['roles'] ?? $requiredApprovals;
+        $users = $requiredApprovals['users'] ?? [];
+
+        $approvers = User::role(array_keys($roles))->get();
+
+        if (!empty($users)) {
+            $specificUsers = $this->getApproversByIdentifier($request, $users);
+            $approvers = $approvers->merge($specificUsers)->unique('id');
+        }
+
+        return $approvers;
+    }
+
+    public function getApproversByIdentifier(MakerCheckerRequest $request, array $userIdentifiers): Collection
+    {
+        return User::whereIn('email', $userIdentifiers)
+            ->orWhereIn('id', $userIdentifiers)
+            ->where('id', '!=', $request->maker_id)
+            ->get();
+    }
+
+    public function getApproverByIdentifier(string $identifier): ?Model
+    {
+        return User::where('email', $identifier)
+            ->orWhere('id', $identifier)
+            ->first();
+    }
+
+    public function userExists(string $identifier): bool
+    {
+        return $this->getApproverByIdentifier($identifier) !== null;
+    }
+
+    public function validateUsersExist(array $userIdentifiers): array
+    {
+        return array_filter($userIdentifiers, fn($id) => !$this->userExists($id));
     }
 }
 

@@ -114,7 +114,7 @@ class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
     /**
      * @throws Exception
      */
-    public function addApproval(Model $approver, ?string $role = null): void
+    public function addApproval(Model $approver, ?string $role = null, ?string $userIdentifier = null): void
     {
         $approvals = $this->approvals ?? [];
         $role = $role ?: 'default';
@@ -126,11 +126,21 @@ class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
             }
         }
 
+        // Get user email if available
+        $userEmail = null;
+        if (method_exists($approver, 'getMakerCheckerEmail')) {
+            $userEmail = $approver->getMakerCheckerEmail();
+        } elseif (isset($approver->email)) {
+            $userEmail = $approver->email;
+        }
+
         // Add the new approver to the approvals array
         $approvals[] = [
             'checker_type' => $approver->getMorphClass(),
             'checker_id' => $approver->getKey(),
             'role' => $role,
+            'user_email' => $userEmail,
+            'user_identifier' => $userIdentifier ?? $userEmail,
             'approved_at' => now()->toIso8601String(),
         ];
 
@@ -151,10 +161,52 @@ class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
             return count($actualApprovals) >= $this->defaultApprovalCount();
         }
 
-        foreach ($requiredApprovals as $role => $count) {
-            $actualCount = collect($actualApprovals)->where('role', $role)->count();
-            if ($actualCount < $count) {
-                return false;
+        // Check for role-based approvals
+        $roles = $requiredApprovals['roles'] ?? $requiredApprovals;
+        // If there's a 'users' key, the format is new; otherwise it's legacy format
+        $isNewFormat = isset($requiredApprovals['users']) || isset($requiredApprovals['roles']);
+
+        if (!$isNewFormat) {
+            // Legacy format: ['role' => count]
+            foreach ($roles as $role => $count) {
+                $actualCount = collect($actualApprovals)->where('role', $role)->count();
+                if ($actualCount < $count) {
+                    return false;
+                }
+            }
+        } else {
+            // New format with explicit roles and/or users
+            $roles = $requiredApprovals['roles'] ?? [];
+            foreach ($roles as $role => $count) {
+                $actualCount = collect($actualApprovals)->where('role', $role)->count();
+                if ($actualCount < $count) {
+                    return false;
+                }
+            }
+
+            // Check for user-based approvals
+            $requiredUsers = $requiredApprovals['users'] ?? [];
+            foreach ($requiredUsers as $userIdentifier) {
+                $userApproved = collect($actualApprovals)->first(function ($approval) use ($userIdentifier) {
+                    // Check by email
+                    if (($approval['user_email'] ?? null) === $userIdentifier) {
+                        return true;
+                    }
+                    // Check by user identifier
+                    if (($approval['user_identifier'] ?? null) === $userIdentifier) {
+                        return true;
+                    }
+                    // Check by ID (for numeric identifiers)
+                    if (is_numeric($userIdentifier) && (string) ($approval['checker_id'] ?? null) === (string) $userIdentifier) {
+                        return true;
+                    }
+
+                    return false;
+                });
+
+                if (!$userApproved) {
+                    return false;
+                }
             }
         }
 
@@ -175,7 +227,11 @@ class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
 
         $pendingRoles = [];
 
-        foreach ($requiredApprovals as $role => $requiredCount) {
+        // Determine format
+        $isNewFormat = isset($requiredApprovals['users']) || isset($requiredApprovals['roles']);
+        $roles = $isNewFormat ? ($requiredApprovals['roles'] ?? []) : $requiredApprovals;
+
+        foreach ($roles as $role => $requiredCount) {
             $actualCount = collect($actualApprovals)->where('role', $role)->count();
             if ($actualCount < $requiredCount) {
                 $pendingRoles[$role] = $requiredCount - $actualCount;
@@ -183,6 +239,62 @@ class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
         }
 
         return $pendingRoles;
+    }
+
+    /**
+     * Get the list of users who still need to approve.
+     *
+     * @return array<string>
+     */
+    public function getPendingUsers(): array
+    {
+        /** @var array $requiredApprovals */
+        $requiredApprovals = $this->required_approvals ?? [];
+        /** @var array $actualApprovals */
+        $actualApprovals = $this->approvals ?? [];
+
+        // Check if new format with users
+        if (!isset($requiredApprovals['users'])) {
+            return [];
+        }
+
+        $requiredUsers = $requiredApprovals['users'];
+        $pendingUsers = [];
+
+        foreach ($requiredUsers as $userIdentifier) {
+            $userApproved = collect($actualApprovals)->first(function ($approval) use ($userIdentifier) {
+                // Check by email
+                if (($approval['user_email'] ?? null) === $userIdentifier) {
+                    return true;
+                }
+                // Check by user identifier
+                if (($approval['user_identifier'] ?? null) === $userIdentifier) {
+                    return true;
+                }
+                // Check by ID (for numeric identifiers)
+                if (is_numeric($userIdentifier) && (string) ($approval['checker_id'] ?? null) === (string) $userIdentifier) {
+                    return true;
+                }
+
+                return false;
+            });
+
+            if (!$userApproved) {
+                $pendingUsers[] = $userIdentifier;
+            }
+        }
+
+        return $pendingUsers;
+    }
+
+    /**
+     * Check if the request requires user-specific approvals.
+     */
+    public function requiresUserApprovals(): bool
+    {
+        $requiredApprovals = $this->required_approvals ?? [];
+
+        return !empty($requiredApprovals['users']);
     }
 
     /**
@@ -196,7 +308,7 @@ class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
     /**
      * Get all approvers for this request.
      *
-     * @return array<array{checker_type: string, checker_id: mixed, role: string, approved_at: string}>
+     * @return array<array{checker_type: string, checker_id: mixed, role: string, user_email: string|null, user_identifier: string|null, approved_at: string}>
      */
     public function getApprovers(): array
     {

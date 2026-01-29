@@ -12,6 +12,7 @@ use Illuminate\Support\Arr;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 use Laravel\SerializableClosure\SerializableClosure;
+use Moffhub\MakerChecker\Contracts\ApproverResolver;
 use Moffhub\MakerChecker\Contracts\ExecutableRequest;
 use Moffhub\MakerChecker\Enums\Hooks;
 use Moffhub\MakerChecker\Enums\RequestStatus;
@@ -239,10 +240,70 @@ class RequestBuilder
     /**
      * Set the required approvals for this request.
      *
-     * @param  array<string, int>  $approvals  Role-based approval requirements, e.g., ['admin' => 2, 'manager' => 1]
+     * Supports two formats:
+     * - Legacy: ['admin' => 2, 'manager' => 1] (role-based only)
+     * - New: ['roles' => ['admin' => 1], 'users' => ['user@example.com']]
+     *
+     * @param  array<string, int>|array{roles?: array<string, int>, users?: array<string>}  $approvals
      */
     public function withApprovals(array $approvals): self
     {
+        $this->request->required_approvals = $approvals;
+        $this->approvalsSet = true;
+
+        return $this;
+    }
+
+    /**
+     * Require specific users to approve this request.
+     *
+     * Users can be specified by email or ID. These users must exist in the system
+     * when the request is saved (validation is performed).
+     *
+     * @param  array<string>  $userIdentifiers  Array of user emails or IDs
+     * @param  bool  $validateExistence  Whether to validate users exist (default: true)
+     */
+    public function requiringUsersToApprove(array $userIdentifiers, bool $validateExistence = true): self
+    {
+        $currentApprovals = $this->request->required_approvals ?? [];
+
+        // Convert legacy format to new format if needed
+        if (!isset($currentApprovals['roles']) && !isset($currentApprovals['users'])) {
+            $currentApprovals = ['roles' => $currentApprovals, 'users' => []];
+        }
+
+        $currentApprovals['users'] = array_unique(array_merge(
+            $currentApprovals['users'] ?? [],
+            $userIdentifiers
+        ));
+
+        // Store whether to validate (explicitly set both true and false)
+        $currentApprovals['_validate_users'] = $validateExistence;
+
+        $this->request->required_approvals = $currentApprovals;
+        $this->approvalsSet = true;
+
+        return $this;
+    }
+
+    /**
+     * Require approval from specific roles AND specific users.
+     *
+     * @param  array<string, int>  $roles  Role requirements, e.g., ['admin' => 1]
+     * @param  array<string>  $users  User emails or IDs
+     * @param  bool  $validateUsers  Whether to validate users exist (default: true)
+     */
+    public function withRoleAndUserApprovals(array $roles, array $users, bool $validateUsers = true): self
+    {
+        $approvals = [
+            'roles' => $roles,
+            'users' => array_unique($users),
+        ];
+
+        if ($validateUsers) {
+            $approvals['_validate_users'] = true;
+        }
+
         $this->request->required_approvals = $approvals;
         $this->approvalsSet = true;
 
@@ -413,6 +474,9 @@ class RequestBuilder
             $this->assertRequestIsUnique($request);
         }
 
+        // Validate required users exist in the system
+        $this->validateRequiredUsersExist($request);
+
         try {
             $request->saveOrFail();
 
@@ -468,6 +532,47 @@ class RequestBuilder
 
         if ($baseQuery->exists()) {
             throw DuplicateRequestException::create($request->type);
+        }
+    }
+
+    /**
+     * Validate that all required users exist in the system.
+     *
+     * @throws RequestCouldNotBeInitiated
+     */
+    protected function validateRequiredUsersExist(MakerCheckerRequest $request): void
+    {
+        $requiredApprovals = $request->required_approvals ?? [];
+
+        // Check if there are users to validate
+        if (!isset($requiredApprovals['users']) || empty($requiredApprovals['users'])) {
+            return;
+        }
+
+        // Check if validation is enabled (default: true for user approvals)
+        $shouldValidate = $requiredApprovals['_validate_users'] ?? true;
+
+        if (!$shouldValidate) {
+            return;
+        }
+
+        $users = $requiredApprovals['users'];
+
+        /** @var ApproverResolver $resolver */
+        $resolver = $this->app->make(ApproverResolver::class);
+
+        $missingUsers = $resolver->validateUsersExist($users);
+
+        if (!empty($missingUsers)) {
+            throw new RequestCouldNotBeInitiated(
+                'The following required approvers do not exist in the system: '.implode(', ', $missingUsers)
+            );
+        }
+
+        // Remove the validation flag before saving
+        if (isset($requiredApprovals['_validate_users'])) {
+            unset($requiredApprovals['_validate_users']);
+            $request->required_approvals = $requiredApprovals;
         }
     }
 }

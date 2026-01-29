@@ -39,10 +39,46 @@ class NotificationService
             return;
         }
 
-        if ($sequential) {
-            $this->notifySequentially($request, $requiredApprovals);
+        // Check format and handle appropriately
+        $isNewFormat = isset($requiredApprovals['users']) || isset($requiredApprovals['roles']);
+
+        if ($isNewFormat) {
+            // Notify specific users first
+            $users = $requiredApprovals['users'] ?? [];
+            if (!empty($users)) {
+                $this->notifySpecificUsers($request, $users);
+            }
+
+            // Then notify roles
+            $roles = $requiredApprovals['roles'] ?? [];
+            if (!empty($roles)) {
+                if ($sequential) {
+                    $this->notifySequentially($request, $roles);
+                } else {
+                    $this->notifyAllRoles($request, $roles);
+                }
+            }
         } else {
-            $this->notifyAllRoles($request, $requiredApprovals);
+            // Legacy format
+            if ($sequential) {
+                $this->notifySequentially($request, $requiredApprovals);
+            } else {
+                $this->notifyAllRoles($request, $requiredApprovals);
+            }
+        }
+    }
+
+    /**
+     * Notify specific users about a pending request.
+     *
+     * @param  array<string>  $userIdentifiers
+     */
+    protected function notifySpecificUsers(MakerCheckerRequest $request, array $userIdentifiers): void
+    {
+        $approvers = $this->approverResolver->getApproversByIdentifier($request, $userIdentifiers);
+
+        foreach ($approvers as $approver) {
+            $this->sendPendingNotification($approver, $request, 'user');
         }
     }
 
@@ -91,6 +127,15 @@ class NotificationService
             return;
         }
 
+        // First check for pending users
+        $pendingUsers = $request->getPendingUsers();
+        if (!empty($pendingUsers)) {
+            $this->notifySpecificUsers($request, $pendingUsers);
+
+            return;
+        }
+
+        // Then check for pending roles
         $pendingRoles = $request->getPendingRoles();
 
         if (empty($pendingRoles)) {

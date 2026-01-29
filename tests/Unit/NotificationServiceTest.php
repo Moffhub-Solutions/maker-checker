@@ -275,6 +275,26 @@ class NotificationServiceTest extends BaseTestCase
             {
                 return $this->getApproversForRole($request, 'any');
             }
+
+            public function getApproversByIdentifier(\Moffhub\MakerChecker\Models\MakerCheckerRequest $request, array $userIdentifiers): \Illuminate\Support\Collection
+            {
+                return User::whereIn('email', $userIdentifiers)->orWhereIn('id', $userIdentifiers)->get();
+            }
+
+            public function getApproverByIdentifier(string $identifier): ?\Illuminate\Database\Eloquent\Model
+            {
+                return User::where('email', $identifier)->orWhere('id', $identifier)->first();
+            }
+
+            public function userExists(string $identifier): bool
+            {
+                return $this->getApproverByIdentifier($identifier) !== null;
+            }
+
+            public function validateUsersExist(array $userIdentifiers): array
+            {
+                return array_filter($userIdentifiers, fn($id) => !$this->userExists($id));
+            }
         };
 
         $this->app->bind(ApproverResolver::class, fn() => $customResolver);

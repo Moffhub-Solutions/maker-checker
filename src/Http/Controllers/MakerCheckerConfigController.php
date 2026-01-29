@@ -64,31 +64,34 @@ class MakerCheckerConfigController extends Controller
      *
      * @bodyParam configurable_type string required The model or executable class name
      * @bodyParam action string The action type (create, update, delete, execute) or null for all
-     * @bodyParam approvals object Role-based approval requirements ['role' => count]
+     * @bodyParam approvals object Role-based approval requirements ['role' => count] (legacy format)
+     * @bodyParam approvals.roles object Role-based approval requirements ['role' => count] (new format)
+     * @bodyParam approvals.users array User emails or IDs required to approve
      * @bodyParam unique_fields array Fields to check for uniqueness
      * @bodyParam team_id integer Optional team ID for multi-tenant configs
      * @bodyParam description string Optional human-readable description
      */
     public function store(Request $request): JsonResponse
     {
-        $validated = $request->validate([
+        $request->validate([
             'configurable_type' => 'required|string',
             'action' => 'nullable|string|in:create,update,delete,execute',
             'approvals' => 'nullable|array',
-            'approvals.*' => 'integer|min:1',
             'unique_fields' => 'nullable|array',
             'unique_fields.*' => 'string',
             'team_id' => 'nullable|integer',
             'description' => 'nullable|string|max:500',
         ]);
 
+        $approvals = $this->normalizeApprovals($request->input('approvals', []));
+
         $config = $this->repository->upsertForModel(
-            $validated['configurable_type'],
-            $validated['action'] ?? null,
-            $validated['approvals'] ?? [],
-            $validated['unique_fields'] ?? [],
-            $validated['team_id'] ?? null,
-            $validated['description'] ?? null
+            $request->input('configurable_type'),
+            $request->input('action'),
+            $approvals,
+            $request->input('unique_fields', []),
+            $request->input('team_id'),
+            $request->input('description')
         );
 
         return response()->json([
@@ -110,23 +113,42 @@ class MakerCheckerConfigController extends Controller
     /**
      * Update a configuration.
      *
-     * @bodyParam approvals object Role-based approval requirements ['role' => count]
+     * @bodyParam approvals object Role-based approval requirements ['role' => count] (legacy format)
+     * @bodyParam approvals.roles object Role-based approval requirements ['role' => count] (new format)
+     * @bodyParam approvals.users array User emails or IDs required to approve
      * @bodyParam unique_fields array Fields to check for uniqueness
      * @bodyParam description string Optional human-readable description
      * @bodyParam is_active boolean Whether the config is active
      */
     public function update(Request $request, MakerCheckerConfig $config): JsonResponse
     {
-        $validated = $request->validate([
+        $request->validate([
             'approvals' => 'nullable|array',
-            'approvals.*' => 'integer|min:1',
             'unique_fields' => 'nullable|array',
             'unique_fields.*' => 'string',
             'description' => 'nullable|string|max:500',
             'is_active' => 'nullable|boolean',
         ]);
 
-        $config = $this->repository->update($config, array_filter($validated, fn($v) => $v !== null));
+        $updateData = [];
+
+        if ($request->has('approvals')) {
+            $updateData['approvals'] = $this->normalizeApprovals($request->input('approvals', []));
+        }
+
+        if ($request->has('unique_fields')) {
+            $updateData['unique_fields'] = $request->input('unique_fields');
+        }
+
+        if ($request->has('description')) {
+            $updateData['description'] = $request->input('description');
+        }
+
+        if ($request->has('is_active')) {
+            $updateData['is_active'] = $request->boolean('is_active');
+        }
+
+        $config = $this->repository->update($config, $updateData);
 
         return response()->json([
             'message' => 'Configuration updated successfully',
@@ -179,7 +201,7 @@ class MakerCheckerConfigController extends Controller
      */
     public function import(Request $request): JsonResponse
     {
-        $validated = $request->validate([
+        $request->validate([
             'configs' => 'required|array',
             'configs.*.configurable_type' => 'required|string',
             'configs.*.action' => 'nullable|string|in:create,update,delete,execute',
@@ -189,7 +211,16 @@ class MakerCheckerConfigController extends Controller
             'configs.*.description' => 'nullable|string|max:500',
         ]);
 
-        $configs = $this->repository->import($validated['configs']);
+        // Normalize approvals in each config
+        $configs = array_map(function ($config) {
+            if (isset($config['approvals'])) {
+                $config['approvals'] = $this->normalizeApprovals($config['approvals']);
+            }
+
+            return $config;
+        }, $request->input('configs', []));
+
+        $configs = $this->repository->import($configs);
 
         return response()->json([
             'message' => sprintf('%d configuration(s) imported successfully', $configs->count()),
@@ -252,6 +283,9 @@ class MakerCheckerConfigController extends Controller
             'action' => $config->action,
             'action_label' => $config->getActionType()?->display() ?? 'All Actions',
             'approvals' => $config->getApprovals(),
+            'role_approvals' => $config->getRoleApprovals(),
+            'user_approvals' => $config->getUserApprovals(),
+            'requires_user_approvals' => $config->requiresUserApprovals(),
             'unique_fields' => $config->getUniqueFields(),
             'is_active' => $config->is_active,
             'team_id' => $config->team_id,
@@ -259,5 +293,21 @@ class MakerCheckerConfigController extends Controller
             'created_at' => $config->created_at->toIso8601String(),
             'updated_at' => $config->updated_at->toIso8601String(),
         ];
+    }
+
+    /**
+     * Normalize approvals structure.
+     *
+     * Expected format:
+     * ['roles' => ['admin' => 1], 'users' => ['user@example.com']]
+     *
+     * @return array{roles?: array<string, int>, users?: array<string>}
+     */
+    protected function normalizeApprovals(array $approvals): array
+    {
+        return array_filter([
+            'roles' => $approvals['roles'] ?? [],
+            'users' => $approvals['users'] ?? [],
+        ], fn($v) => !empty($v));
     }
 }

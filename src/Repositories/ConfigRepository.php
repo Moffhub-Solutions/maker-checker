@@ -243,11 +243,82 @@ class ConfigRepository
     /**
      * Set approval requirements for a config.
      *
-     * @param  array<string, int>  $approvals
+     * @param  array<string, int>|array{roles?: array<string, int>, users?: array<string>}  $approvals
      */
     public function setApprovals(MakerCheckerConfig $config, array $approvals): MakerCheckerConfig
     {
         return $this->update($config, ['approvals' => $approvals]);
+    }
+
+    /**
+     * Set role-based approval requirements for a config.
+     *
+     * @param  array<string, int>  $roles
+     */
+    public function setRoleApprovals(MakerCheckerConfig $config, array $roles): MakerCheckerConfig
+    {
+        $approvals = $config->approvals ?? [];
+        $approvals['roles'] = $roles;
+
+        // If there's no users array, keep it clean
+        if (empty($approvals['users'] ?? [])) {
+            unset($approvals['users']);
+        }
+
+        return $this->update($config, ['approvals' => $approvals]);
+    }
+
+    /**
+     * Set user-specific approval requirements for a config.
+     *
+     * @param  array<string>  $users  User emails or IDs
+     */
+    public function setUserApprovals(MakerCheckerConfig $config, array $users): MakerCheckerConfig
+    {
+        $approvals = $config->approvals ?? [];
+
+        // Convert legacy format to new format if needed
+        if (!isset($approvals['roles']) && !isset($approvals['users'])) {
+            $approvals = ['roles' => $approvals];
+        }
+
+        $approvals['users'] = array_unique($users);
+
+        // Clean up empty arrays
+        if (empty($approvals['users'])) {
+            unset($approvals['users']);
+        }
+        if (empty($approvals['roles'] ?? [])) {
+            unset($approvals['roles']);
+        }
+
+        return $this->update($config, ['approvals' => $approvals]);
+    }
+
+    /**
+     * Add a user to the approval requirements.
+     *
+     * @param  string  $userIdentifier  User email or ID
+     */
+    public function addUserApproval(MakerCheckerConfig $config, string $userIdentifier): MakerCheckerConfig
+    {
+        $users = $config->getUserApprovals();
+        $users[] = $userIdentifier;
+
+        return $this->setUserApprovals($config, array_unique($users));
+    }
+
+    /**
+     * Remove a user from the approval requirements.
+     *
+     * @param  string  $userIdentifier  User email or ID
+     */
+    public function removeUserApproval(MakerCheckerConfig $config, string $userIdentifier): MakerCheckerConfig
+    {
+        $users = $config->getUserApprovals();
+        $users = array_filter($users, fn($u) => $u !== $userIdentifier);
+
+        return $this->setUserApprovals($config, array_values($users));
     }
 
     /**

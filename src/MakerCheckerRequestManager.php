@@ -424,6 +424,47 @@ class MakerCheckerRequestManager
                 throw RequestCannotBeChecked::create('Request checker cannot be the same as the maker.');
             }
         }
+
+        // Validate user-specific approval requirements if applicable
+        $this->assertUserCanApproveIfRequired($request, $checker);
+    }
+
+    /**
+     * Assert that the checker is an allowed user if the request requires specific user approvals.
+     */
+    private function assertUserCanApproveIfRequired(MakerCheckerRequest $request, Model $checker): void
+    {
+        $requiredApprovals = $request->required_approvals ?? [];
+
+        // Check if there are user-specific requirements
+        if (!isset($requiredApprovals['users']) || empty($requiredApprovals['users'])) {
+            return;
+        }
+
+        $pendingUsers = $request->getPendingUsers();
+
+        if (empty($pendingUsers)) {
+            // All required users have already approved
+            return;
+        }
+
+        // Get checker's email
+        $checkerEmail = $this->getUserEmail($checker);
+        $checkerId = (string) $checker->getKey();
+
+        // Check if the checker is one of the pending users
+        $isRequiredUser = in_array($checkerEmail, $pendingUsers, true)
+            || in_array($checkerId, $pendingUsers, true);
+
+        // Also check if there are pending roles that this user might fulfill
+        $hasPendingRoles = !empty($request->getPendingRoles());
+
+        // If there are no pending roles and the user is not a required user, they cannot approve
+        if (!$hasPendingRoles && !$isRequiredUser) {
+            throw RequestCannotBeChecked::create(
+                'This request requires approval from specific users. You are not authorized to approve it.'
+            );
+        }
     }
 
     /**

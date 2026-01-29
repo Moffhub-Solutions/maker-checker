@@ -138,6 +138,8 @@ class MakerCheckerRequestController extends Controller
                 'current_approvals' => $mcRequest->approvals ?? [],
                 'is_fully_approved' => $this->isFullyApproved($mcRequest),
                 'pending_roles' => $this->getPendingRoles($mcRequest),
+                'pending_users' => $mcRequest->getPendingUsers(),
+                'requires_user_approvals' => $mcRequest->requiresUserApprovals(),
             ],
         ]);
     }

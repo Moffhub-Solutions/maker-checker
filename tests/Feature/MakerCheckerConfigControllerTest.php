@@ -129,7 +129,8 @@ class MakerCheckerConfigControllerTest extends BaseTestCase
             ->assertJsonPath('message', 'Configuration updated successfully');
 
         $config->refresh();
-        $this->assertEquals(['admin' => 3, 'reviewer' => 1], $config->getApprovals());
+        // Legacy format is normalized to new format
+        $this->assertEquals(['admin' => 3, 'reviewer' => 1], $config->getRoleApprovals());
         $this->assertEquals('Updated description', $config->description);
     }
 
@@ -322,5 +323,162 @@ class MakerCheckerConfigControllerTest extends BaseTestCase
 
         $response->assertOk()
             ->assertJsonCount(1, 'data');
+    }
+
+    public function test_can_create_config_with_user_approvals(): void
+    {
+        $response = $this->actingAs($this->admin)
+            ->postJson('/api/maker-checker/configs', [
+                'configurable_type' => Post::class,
+                'action' => 'create',
+                'approvals' => [
+                    'roles' => ['admin' => 1],
+                    'users' => ['cfo@company.com', 'ceo@company.com'],
+                ],
+                'description' => 'Requires CFO and CEO approval',
+            ]);
+
+        $response->assertStatus(201)
+            ->assertJsonPath('data.requires_user_approvals', true)
+            ->assertJsonPath('data.user_approvals', ['cfo@company.com', 'ceo@company.com'])
+            ->assertJsonPath('data.role_approvals.admin', 1);
+
+        $config = MakerCheckerConfig::first();
+        $this->assertTrue($config->requiresUserApprovals());
+        $this->assertEquals(['cfo@company.com', 'ceo@company.com'], $config->getUserApprovals());
+        $this->assertEquals(['admin' => 1], $config->getRoleApprovals());
+    }
+
+    public function test_can_create_config_with_only_user_approvals(): void
+    {
+        $response = $this->actingAs($this->admin)
+            ->postJson('/api/maker-checker/configs', [
+                'configurable_type' => Post::class,
+                'action' => 'delete',
+                'approvals' => [
+                    'users' => ['legal@company.com'],
+                ],
+            ]);
+
+        $response->assertStatus(201)
+            ->assertJsonPath('data.requires_user_approvals', true)
+            ->assertJsonPath('data.user_approvals', ['legal@company.com']);
+
+        $config = MakerCheckerConfig::first();
+        $this->assertTrue($config->requiresUserApprovals());
+        $this->assertEmpty($config->getRoleApprovals());
+    }
+
+    public function test_can_update_config_with_user_approvals(): void
+    {
+        $config = MakerCheckerConfig::create([
+            'configurable_type' => Post::class,
+            'action' => 'create',
+            'approvals' => ['admin' => 1],
+            'is_active' => true,
+        ]);
+
+        $response = $this->actingAs($this->admin)
+            ->putJson("/api/maker-checker/configs/{$config->id}", [
+                'approvals' => [
+                    'roles' => ['admin' => 2],
+                    'users' => ['cfo@company.com'],
+                ],
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('data.requires_user_approvals', true);
+
+        $config->refresh();
+        $this->assertEquals(['cfo@company.com'], $config->getUserApprovals());
+        $this->assertEquals(['admin' => 2], $config->getRoleApprovals());
+    }
+
+    public function test_legacy_format_converted_to_new_format(): void
+    {
+        $response = $this->actingAs($this->admin)
+            ->postJson('/api/maker-checker/configs', [
+                'configurable_type' => Post::class,
+                'action' => 'create',
+                'approvals' => ['admin' => 2, 'manager' => 1],
+            ]);
+
+        $response->assertStatus(201)
+            ->assertJsonPath('data.role_approvals.admin', 2)
+            ->assertJsonPath('data.role_approvals.manager', 1);
+
+        $config = MakerCheckerConfig::first();
+        // Legacy format should be converted to new format internally
+        $this->assertEquals(['admin' => 2, 'manager' => 1], $config->getRoleApprovals());
+        $this->assertEmpty($config->getUserApprovals());
+        // Raw approvals should be in new format
+        $this->assertArrayHasKey('roles', $config->getApprovals());
+    }
+
+    public function test_can_import_configs_with_user_approvals(): void
+    {
+        $response = $this->actingAs($this->admin)
+            ->postJson('/api/maker-checker/configs/import', [
+                'configs' => [
+                    [
+                        'configurable_type' => Post::class,
+                        'action' => 'create',
+                        'approvals' => [
+                            'roles' => ['admin' => 1],
+                            'users' => ['approver@company.com'],
+                        ],
+                    ],
+                    [
+                        'configurable_type' => Post::class,
+                        'action' => 'delete',
+                        'approvals' => [
+                            'users' => ['legal@company.com', 'ceo@company.com'],
+                        ],
+                    ],
+                ],
+            ]);
+
+        $response->assertOk()
+            ->assertJsonPath('message', '2 configuration(s) imported successfully');
+
+        $configs = MakerCheckerConfig::all();
+        $this->assertCount(2, $configs);
+
+        $createConfig = $configs->where('action', 'create')->first();
+        $this->assertEquals(['approver@company.com'], $createConfig->getUserApprovals());
+
+        $deleteConfig = $configs->where('action', 'delete')->first();
+        $this->assertEquals(['legal@company.com', 'ceo@company.com'], $deleteConfig->getUserApprovals());
+    }
+
+    public function test_config_response_includes_user_approval_fields(): void
+    {
+        $config = MakerCheckerConfig::create([
+            'configurable_type' => Post::class,
+            'action' => 'create',
+            'approvals' => [
+                'roles' => ['admin' => 1],
+                'users' => ['cfo@company.com'],
+            ],
+            'is_active' => true,
+        ]);
+
+        $response = $this->actingAs($this->admin)
+            ->getJson("/api/maker-checker/configs/{$config->id}");
+
+        $response->assertOk()
+            ->assertJsonStructure([
+                'data' => [
+                    'id',
+                    'configurable_type',
+                    'approvals',
+                    'role_approvals',
+                    'user_approvals',
+                    'requires_user_approvals',
+                ],
+            ])
+            ->assertJsonPath('data.role_approvals.admin', 1)
+            ->assertJsonPath('data.user_approvals', ['cfo@company.com'])
+            ->assertJsonPath('data.requires_user_approvals', true);
     }
 }

@@ -14,10 +14,13 @@ use Moffhub\MakerChecker\Enums\RequestType;
  * This model allows storing and managing approval configurations in the database,
  * enabling dynamic configuration via API without code changes.
  *
+ * Approvals format:
+ * ['roles' => ['admin' => 1], 'users' => ['user@example.com']]
+ *
  * @property int $id
  * @property string $configurable_type Model class name or executable class name
  * @property string|null $action RequestType value (create, update, delete, execute) or null for all actions
- * @property array<string, int> $approvals Role-based approval requirements ['role' => count]
+ * @property array{roles?: array<string, int>, users?: array<string>} $approvals Approval requirements
  * @property array<string> $unique_fields Fields to check for uniqueness
  * @property bool $is_active Whether this config is active
  * @property int|null $team_id Optional team ID for multi-tenant configs
@@ -137,11 +140,51 @@ class MakerCheckerConfig extends Model
     /**
      * Get the approval requirements as an array.
      *
-     * @return array<string, int>
+     * Returns the full approval structure, which may include:
+     * - Legacy format: ['admin' => 2, 'manager' => 1]
+     * - New format: ['roles' => ['admin' => 1], 'users' => ['user@example.com']]
+     *
+     * @return array<string, int>|array{roles?: array<string, int>, users?: array<string>}
      */
     public function getApprovals(): array
     {
         return $this->approvals ?? [];
+    }
+
+    /**
+     * Get role-based approval requirements.
+     *
+     * @return array<string, int>
+     */
+    public function getRoleApprovals(): array
+    {
+        $approvals = $this->approvals ?? [];
+
+        // New format with explicit roles key
+        if (isset($approvals['roles'])) {
+            return $approvals['roles'];
+        }
+
+        // Legacy format - filter out 'users' key if accidentally present
+        return array_filter($approvals, fn($key) => $key !== 'users', ARRAY_FILTER_USE_KEY);
+    }
+
+    /**
+     * Get user-specific approval requirements.
+     *
+     * @return array<string>
+     */
+    public function getUserApprovals(): array
+    {
+        return $this->approvals['users'] ?? [];
+    }
+
+    /**
+     * Check if this config requires user-specific approvals.
+     */
+    public function requiresUserApprovals(): bool
+    {
+        return !empty($this->approvals['users']);
     }
 
     /**

@@ -106,7 +106,7 @@ class PendingApprovalNotification extends Notification implements ShouldQueue
 
         $key = $maker->getKey();
 
-        return 'User #' . ($key !== null ? (string) $key : 'Unknown');
+        return 'User #'.($key !== null ? (string) $key : 'Unknown');
     }
 
     /**

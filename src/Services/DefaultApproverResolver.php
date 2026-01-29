@@ -58,6 +58,102 @@ class DefaultApproverResolver implements ApproverResolver
     }
 
     /**
+     * Get users by their identifiers (email or ID).
+     *
+     * @param  array<string>  $userIdentifiers  Array of user emails or IDs
+     */
+    public function getApproversByIdentifier(MakerCheckerRequest $request, array $userIdentifiers): Collection
+    {
+        $userModel = $this->getUserModel();
+
+        if (!$userModel || !class_exists($userModel) || empty($userIdentifiers)) {
+            return collect();
+        }
+
+        $query = $userModel::query();
+
+        // Exclude the maker from approvers
+        $query->where('id', '!=', $request->maker_id);
+
+        // Filter by identifiers - support both email and ID
+        $query->where(function ($q) use ($userIdentifiers) {
+            // Check if identifiers look like emails
+            $emails = array_filter($userIdentifiers, fn($id) => filter_var($id, FILTER_VALIDATE_EMAIL));
+            $ids = array_filter($userIdentifiers, fn($id) => !filter_var($id, FILTER_VALIDATE_EMAIL) && is_numeric($id));
+
+            if (!empty($emails)) {
+                $q->orWhereIn('email', $emails);
+            }
+
+            if (!empty($ids)) {
+                $q->orWhereIn('id', $ids);
+            }
+        });
+
+        // Filter by team if enabled and request has team_id
+        if ($this->isTeamScopingEnabled() && $request->team_id) {
+            $teamAttribute = $this->getTeamAttribute();
+            $query->where($teamAttribute, $request->team_id);
+        }
+
+        return $query->get();
+    }
+
+    /**
+     * Get a single approver by their identifier (email or ID).
+     *
+     * Returns null if the user doesn't exist.
+     */
+    public function getApproverByIdentifier(string $identifier): ?Model
+    {
+        $userModel = $this->getUserModel();
+
+        if (!$userModel || !class_exists($userModel)) {
+            return null;
+        }
+
+        $query = $userModel::query();
+
+        if (filter_var($identifier, FILTER_VALIDATE_EMAIL)) {
+            $query->where('email', $identifier);
+        } elseif (is_numeric($identifier)) {
+            $query->where('id', (int) $identifier);
+        } else {
+            // Try email lookup as fallback for non-email/non-numeric strings
+            $query->where('email', $identifier);
+        }
+
+        return $query->first();
+    }
+
+    /**
+     * Check if a user exists by their identifier.
+     */
+    public function userExists(string $identifier): bool
+    {
+        return $this->getApproverByIdentifier($identifier) !== null;
+    }
+
+    /**
+     * Validate that all specified users exist.
+     *
+     * @param  array<string>  $userIdentifiers
+     * @return array<string> Array of identifiers that don't exist
+     */
+    public function validateUsersExist(array $userIdentifiers): array
+    {
+        $missingUsers = [];
+
+        foreach ($userIdentifiers as $identifier) {
+            if (!$this->userExists($identifier)) {
+                $missingUsers[] = $identifier;
+            }
+        }
+
+        return $missingUsers;
+    }
+
+    /**
      * Get all users who can approve the given request (any required role).
      */
     public function getAllApprovers(MakerCheckerRequest $request): Collection
@@ -71,9 +167,29 @@ class DefaultApproverResolver implements ApproverResolver
 
         $approvers = collect();
 
-        foreach (array_keys($requiredApprovals) as $role) {
-            $roleApprovers = $this->getApproversForRole($request, $role);
-            $approvers = $approvers->merge($roleApprovers);
+        // Check for new format with roles and users
+        $isNewFormat = isset($requiredApprovals['users']) || isset($requiredApprovals['roles']);
+
+        if ($isNewFormat) {
+            // Get role-based approvers
+            $roles = $requiredApprovals['roles'] ?? [];
+            foreach (array_keys($roles) as $role) {
+                $roleApprovers = $this->getApproversForRole($request, $role);
+                $approvers = $approvers->merge($roleApprovers);
+            }
+
+            // Get user-specific approvers
+            $users = $requiredApprovals['users'] ?? [];
+            if (!empty($users)) {
+                $userApprovers = $this->getApproversByIdentifier($request, $users);
+                $approvers = $approvers->merge($userApprovers);
+            }
+        } else {
+            // Legacy format: ['role' => count]
+            foreach (array_keys($requiredApprovals) as $role) {
+                $roleApprovers = $this->getApproversForRole($request, $role);
+                $approvers = $approvers->merge($roleApprovers);
+            }
         }
 
         // Remove duplicates (same user with multiple roles)

@@ -38,6 +38,12 @@ class MakerCheckerResource extends Resource
             'checked_at' => $this->resource->checked_at?->toIso8601ZuluString(),
             'maker' => $this->formatUser($this->resource->maker),
             'checker' => $this->formatUser($this->resource->checker),
+            'required_approvals' => $this->resource->required_approvals ?? [],
+            'current_approvals' => $this->resource->approvals ?? [],
+            'pending_roles' => $this->resource->getPendingRoles(),
+            'pending_users' => $this->resource->getPendingUsers(),
+            'requires_user_approvals' => $this->resource->requiresUserApprovals(),
+            'is_fully_approved' => $this->resource->hasMetApprovalThreshold(),
         ];
     }
 
