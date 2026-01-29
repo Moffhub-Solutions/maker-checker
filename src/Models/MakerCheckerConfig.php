@@ -140,11 +140,7 @@ class MakerCheckerConfig extends Model
     /**
      * Get the approval requirements as an array.
      *
-     * Returns the full approval structure, which may include:
-     * - Legacy format: ['admin' => 2, 'manager' => 1]
-     * - New format: ['roles' => ['admin' => 1], 'users' => ['user@example.com']]
-     *
-     * @return array<string, int>|array{roles?: array<string, int>, users?: array<string>}
+     * @return array{roles?: array<string, int>, users?: array<string>}
      */
     public function getApprovals(): array
     {
@@ -158,15 +154,7 @@ class MakerCheckerConfig extends Model
      */
     public function getRoleApprovals(): array
     {
-        $approvals = $this->approvals ?? [];
-
-        // New format with explicit roles key
-        if (isset($approvals['roles'])) {
-            return $approvals['roles'];
-        }
-
-        // Legacy format - filter out 'users' key if accidentally present
-        return array_filter($approvals, fn($key) => $key !== 'users', ARRAY_FILTER_USE_KEY);
+        return $this->approvals['roles'] ?? [];
     }
 
     /**

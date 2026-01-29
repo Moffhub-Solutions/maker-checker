@@ -276,12 +276,6 @@ class ConfigRepository
     public function setUserApprovals(MakerCheckerConfig $config, array $users): MakerCheckerConfig
     {
         $approvals = $config->approvals ?? [];
-
-        // Convert legacy format to new format if needed
-        if (!isset($approvals['roles']) && !isset($approvals['users'])) {
-            $approvals = ['roles' => $approvals];
-        }
-
         $approvals['users'] = array_unique($users);
 
         // Clean up empty arrays

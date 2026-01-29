@@ -525,14 +525,104 @@ Manage configs via API or programmatically:
 ```php
 use Moffhub\MakerChecker\Models\MakerCheckerConfig;
 
+// Create with role-based approvals
 MakerCheckerConfig::create([
     'configurable_type' => Post::class,
     'action' => 'delete',
-    'approvals' => ['admin' => 2],
-    'unique_fields' => [],
-    'is_enabled' => true,
+    'approvals' => [
+        'roles' => ['admin' => 2],
+    ],
+    'is_active' => true,
+]);
+
+// Create with both role and user approvals
+MakerCheckerConfig::create([
+    'configurable_type' => Contract::class,
+    'action' => 'create',
+    'approvals' => [
+        'roles' => ['admin' => 1, 'legal' => 1],
+        'users' => ['cfo@company.com', 'ceo@company.com'],
+    ],
+    'description' => 'High-value contracts require CFO and CEO approval',
+    'is_active' => true,
+]);
+
+// Create with user-only approvals
+MakerCheckerConfig::create([
+    'configurable_type' => Payment::class,
+    'action' => 'create',
+    'approvals' => [
+        'users' => ['finance@company.com'],
+    ],
+    'is_active' => true,
 ]);
 ```
+
+#### Configuration API
+
+Create configuration via API:
+
+```http
+POST /api/maker-checker/configs
+Content-Type: application/json
+
+{
+    "configurable_type": "App\\Models\\Contract",
+    "action": "create",
+    "approvals": {
+        "roles": {
+            "admin": 1,
+            "legal": 1
+        },
+        "users": [
+            "cfo@company.com",
+            "ceo@company.com"
+        ]
+    },
+    "description": "Contract creation approval workflow"
+}
+```
+
+Response:
+
+```json
+{
+    "message": "Configuration created successfully",
+    "data": {
+        "id": 1,
+        "configurable_type": "App\\Models\\Contract",
+        "configurable_name": "Contract",
+        "action": "create",
+        "action_label": "Create",
+        "approvals": {
+            "roles": {"admin": 1, "legal": 1},
+            "users": ["cfo@company.com", "ceo@company.com"]
+        },
+        "role_approvals": {"admin": 1, "legal": 1},
+        "user_approvals": ["cfo@company.com", "ceo@company.com"],
+        "requires_user_approvals": true,
+        "is_active": true
+    }
+}
+```
+
+Update configuration:
+
+```http
+PUT /api/maker-checker/configs/1
+Content-Type: application/json
+
+{
+    "approvals": {
+        "roles": {"admin": 2},
+        "users": ["cfo@company.com"]
+    }
+}
+```
+
+#### UI Mockup
+
+A sample UI mockup for the configuration management interface is available at `docs/ui-mockup.html`. Open it in a browser to see how the frontend could interact with these APIs.
 
 ## API Endpoints
 

@@ -29,14 +29,14 @@ class MakerCheckerConfigControllerTest extends BaseTestCase
         MakerCheckerConfig::create([
             'configurable_type' => Post::class,
             'action' => 'create',
-            'approvals' => ['admin' => 1],
+            'approvals' => ['roles' => ['admin' => 1]],
             'is_active' => true,
         ]);
 
         MakerCheckerConfig::create([
             'configurable_type' => User::class,
             'action' => 'update',
-            'approvals' => ['manager' => 2],
+            'approvals' => ['roles' => ['manager' => 2]],
             'is_active' => true,
         ]);
 
@@ -52,14 +52,14 @@ class MakerCheckerConfigControllerTest extends BaseTestCase
         MakerCheckerConfig::create([
             'configurable_type' => Post::class,
             'action' => 'create',
-            'approvals' => ['admin' => 1],
+            'approvals' => ['roles' => ['admin' => 1]],
             'is_active' => true,
         ]);
 
         MakerCheckerConfig::create([
             'configurable_type' => User::class,
             'action' => 'create',
-            'approvals' => ['admin' => 1],
+            'approvals' => ['roles' => ['admin' => 1]],
             'is_active' => true,
         ]);
 
@@ -76,7 +76,7 @@ class MakerCheckerConfigControllerTest extends BaseTestCase
             ->postJson('/api/maker-checker/configs', [
                 'configurable_type' => Post::class,
                 'action' => 'create',
-                'approvals' => ['admin' => 2, 'manager' => 1],
+                'approvals' => ['roles' => ['admin' => 2, 'manager' => 1]],
                 'unique_fields' => ['title'],
                 'description' => 'Config for Post creation',
             ]);
@@ -97,7 +97,7 @@ class MakerCheckerConfigControllerTest extends BaseTestCase
         $config = MakerCheckerConfig::create([
             'configurable_type' => Post::class,
             'action' => 'create',
-            'approvals' => ['admin' => 1],
+            'approvals' => ['roles' => ['admin' => 1]],
             'unique_fields' => ['title'],
             'is_active' => true,
         ]);
@@ -115,13 +115,13 @@ class MakerCheckerConfigControllerTest extends BaseTestCase
         $config = MakerCheckerConfig::create([
             'configurable_type' => Post::class,
             'action' => 'create',
-            'approvals' => ['admin' => 1],
+            'approvals' => ['roles' => ['admin' => 1]],
             'is_active' => true,
         ]);
 
         $response = $this->actingAs($this->admin)
             ->putJson("/api/maker-checker/configs/{$config->id}", [
-                'approvals' => ['admin' => 3, 'reviewer' => 1],
+                'approvals' => ['roles' => ['admin' => 3, 'reviewer' => 1]],
                 'description' => 'Updated description',
             ]);
 
@@ -129,7 +129,6 @@ class MakerCheckerConfigControllerTest extends BaseTestCase
             ->assertJsonPath('message', 'Configuration updated successfully');
 
         $config->refresh();
-        // Legacy format is normalized to new format
         $this->assertEquals(['admin' => 3, 'reviewer' => 1], $config->getRoleApprovals());
         $this->assertEquals('Updated description', $config->description);
     }
@@ -139,7 +138,7 @@ class MakerCheckerConfigControllerTest extends BaseTestCase
         $config = MakerCheckerConfig::create([
             'configurable_type' => Post::class,
             'action' => 'create',
-            'approvals' => ['admin' => 1],
+            'approvals' => ['roles' => ['admin' => 1]],
             'is_active' => true,
         ]);
 
@@ -159,7 +158,7 @@ class MakerCheckerConfigControllerTest extends BaseTestCase
         $config = MakerCheckerConfig::create([
             'configurable_type' => Post::class,
             'action' => 'create',
-            'approvals' => ['admin' => 1],
+            'approvals' => ['roles' => ['admin' => 1]],
             'is_active' => false,
         ]);
 
@@ -178,7 +177,7 @@ class MakerCheckerConfigControllerTest extends BaseTestCase
         $config = MakerCheckerConfig::create([
             'configurable_type' => Post::class,
             'action' => 'create',
-            'approvals' => ['admin' => 1],
+            'approvals' => ['roles' => ['admin' => 1]],
             'is_active' => true,
         ]);
 
@@ -200,17 +199,17 @@ class MakerCheckerConfigControllerTest extends BaseTestCase
                     [
                         'configurable_type' => Post::class,
                         'action' => 'create',
-                        'approvals' => ['admin' => 1],
+                        'approvals' => ['roles' => ['admin' => 1]],
                     ],
                     [
                         'configurable_type' => Post::class,
                         'action' => 'update',
-                        'approvals' => ['admin' => 2],
+                        'approvals' => ['roles' => ['admin' => 2]],
                     ],
                     [
                         'configurable_type' => User::class,
                         'action' => 'delete',
-                        'approvals' => ['superadmin' => 1],
+                        'approvals' => ['roles' => ['superadmin' => 1]],
                     ],
                 ],
             ]);
@@ -226,7 +225,7 @@ class MakerCheckerConfigControllerTest extends BaseTestCase
         MakerCheckerConfig::create([
             'configurable_type' => Post::class,
             'action' => 'create',
-            'approvals' => ['admin' => 1],
+            'approvals' => ['roles' => ['admin' => 1]],
             'unique_fields' => ['title'],
             'is_active' => true,
         ]);
@@ -234,7 +233,7 @@ class MakerCheckerConfigControllerTest extends BaseTestCase
         MakerCheckerConfig::create([
             'configurable_type' => User::class,
             'action' => 'update',
-            'approvals' => ['manager' => 2],
+            'approvals' => ['roles' => ['manager' => 2]],
             'is_active' => true,
         ]);
 
@@ -269,14 +268,14 @@ class MakerCheckerConfigControllerTest extends BaseTestCase
         MakerCheckerConfig::create([
             'configurable_type' => Post::class,
             'action' => 'create',
-            'approvals' => ['admin' => 1],
+            'approvals' => ['roles' => ['admin' => 1]],
             'is_active' => true,
         ]);
 
         MakerCheckerConfig::create([
             'configurable_type' => User::class,
             'action' => 'create',
-            'approvals' => ['admin' => 1],
+            'approvals' => ['roles' => ['admin' => 1]],
             'is_active' => true,
         ]);
 
@@ -305,7 +304,7 @@ class MakerCheckerConfigControllerTest extends BaseTestCase
         MakerCheckerConfig::create([
             'configurable_type' => Post::class,
             'action' => 'create',
-            'approvals' => ['admin' => 1],
+            'approvals' => ['roles' => ['admin' => 1]],
             'team_id' => 1,
             'is_active' => true,
         ]);
@@ -313,7 +312,7 @@ class MakerCheckerConfigControllerTest extends BaseTestCase
         MakerCheckerConfig::create([
             'configurable_type' => Post::class,
             'action' => 'create',
-            'approvals' => ['admin' => 2],
+            'approvals' => ['roles' => ['admin' => 2]],
             'team_id' => 2,
             'is_active' => true,
         ]);
@@ -374,7 +373,7 @@ class MakerCheckerConfigControllerTest extends BaseTestCase
         $config = MakerCheckerConfig::create([
             'configurable_type' => Post::class,
             'action' => 'create',
-            'approvals' => ['admin' => 1],
+            'approvals' => ['roles' => ['admin' => 1]],
             'is_active' => true,
         ]);
 
@@ -394,25 +393,23 @@ class MakerCheckerConfigControllerTest extends BaseTestCase
         $this->assertEquals(['admin' => 2], $config->getRoleApprovals());
     }
 
-    public function test_legacy_format_converted_to_new_format(): void
+    public function test_can_create_config_with_role_approvals_only(): void
     {
         $response = $this->actingAs($this->admin)
             ->postJson('/api/maker-checker/configs', [
                 'configurable_type' => Post::class,
                 'action' => 'create',
-                'approvals' => ['admin' => 2, 'manager' => 1],
+                'approvals' => ['roles' => ['admin' => 2, 'manager' => 1]],
             ]);
 
         $response->assertStatus(201)
             ->assertJsonPath('data.role_approvals.admin', 2)
-            ->assertJsonPath('data.role_approvals.manager', 1);
+            ->assertJsonPath('data.role_approvals.manager', 1)
+            ->assertJsonPath('data.requires_user_approvals', false);
 
         $config = MakerCheckerConfig::first();
-        // Legacy format should be converted to new format internally
         $this->assertEquals(['admin' => 2, 'manager' => 1], $config->getRoleApprovals());
         $this->assertEmpty($config->getUserApprovals());
-        // Raw approvals should be in new format
-        $this->assertArrayHasKey('roles', $config->getApprovals());
     }
 
     public function test_can_import_configs_with_user_approvals(): void
