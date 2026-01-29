@@ -12,10 +12,11 @@ class InvalidRequestTypePassed extends InvalidArgumentException
     public static function create(RequestType $requestType): self
     {
         $allowedRequestTypes = array_column(RequestType::cases(), 'value');
-        $allowedRequestTypes = implode(', ', $allowedRequestTypes);
-        $message = vsprintf(
+        $allowedRequestTypesString = implode(', ', $allowedRequestTypes);
+        $message = sprintf(
             'The type: %s is not a valid request type. Request type must be one of: %s',
-            [$requestType, $allowedRequestTypes],
+            $requestType->value,
+            $allowedRequestTypesString,
         );
 
         return new self($message);

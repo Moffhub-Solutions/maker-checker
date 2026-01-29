@@ -13,7 +13,7 @@ abstract class Resource extends EnhancedResource
 {
     public function toJsonAssertion(bool $wrapped = true): Closure
     {
-        return function (AssertableJson $json) use ($wrapped) {
+        return function (AssertableJson $json) use ($wrapped): void {
             $content = $wrapped ? (string) $this->response()->getContent() : $this->toJson();
             $expectedData = json_decode($content, true);
 

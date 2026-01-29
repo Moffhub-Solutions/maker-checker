@@ -21,15 +21,16 @@
     ],
     "minimum-stability": "stable",
     "require": {
-        "php": "^8.3",
+        "php": "^8.3 || ^8.4 || ^8.5",
         "illuminate/support": "^12.0",
         "sourcetoad/enhanced-resources": "^7.1"
     },
     "require-dev": {
         "laravel/pint": "^1.22",
         "orchestra/testbench": "^10.6",
-        "phpstan/phpstan": "^1.12",
-        "phpunit/phpunit": "^11.5"
+        "phpstan/phpstan": "^2.1",
+        "phpunit/phpunit": "^11.5",
+        "rector/rector": "^2.0"
     },
     "config": {
         "sort-packages": true
@@ -55,6 +56,12 @@
         ],
         "phpstan": [
             "vendor/bin/phpstan"
+        ],
+        "rector": [
+            "vendor/bin/rector process --dry-run"
+        ],
+        "rector:fix": [
+            "vendor/bin/rector process"
         ],
         "test": [
             "vendor/bin/phpunit"

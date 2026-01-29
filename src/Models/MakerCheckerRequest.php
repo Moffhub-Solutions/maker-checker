@@ -4,28 +4,42 @@ declare(strict_types=1);
 
 namespace Moffhub\MakerChecker\Models;
 
-use App\Enums\Permission;
-use App\Models\Traits\Sortable;
-use App\Models\User;
-use Carbon\CarbonImmutable;
 use Closure;
 use Exception;
-use Illuminate\Contracts\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
-use Laravel\Scout\Builder as ScoutBuilder;
-use Laravel\Scout\Searchable;
+use Illuminate\Support\Carbon;
 use Moffhub\MakerChecker\Contracts\MakerCheckerRequestInterface;
+use Moffhub\MakerChecker\Contracts\MakerCheckerUserContract;
 use Moffhub\MakerChecker\Enums\RequestStatus;
 use Moffhub\MakerChecker\Enums\RequestType;
 
 /**
+ * Base maker-checker request model.
+ *
+ * To enable search functionality with Laravel Scout, extend this class and use the Searchable trait:
+ *
+ * ```php
+ * use Laravel\Scout\Searchable;
+ *
+ * class SearchableMakerCheckerRequest extends MakerCheckerRequest
+ * {
+ *     use Searchable;
+ * }
+ * ```
+ *
+ * Then update your config to use the extended class:
+ * ```php
+ * 'request_model' => SearchableMakerCheckerRequest::class,
+ * ```
+ *
  * @property int $id
  * @property string $code
  * @property string $description
  * @property array|null $payload
  * @property array|null $required_approvals
+ * @property array|null $approvals
  * @property array|null $metadata
  * @property RequestStatus $status
  * @property RequestType $type
@@ -37,18 +51,15 @@ use Moffhub\MakerChecker\Enums\RequestType;
  * @property string|null $checker_type
  * @property int|null $checker_id
  * @property string|Closure|null $executable
- * @property CarbonImmutable|null $checked_at
- * @property CarbonImmutable|null $made_at
+ * @property Carbon|null $checked_at
+ * @property Carbon|null $made_at
  * @property string $remarks
  * @property string|null $exception
- * @property CarbonImmutable|null $created_at
- * @property CarbonImmutable|null $updated_at
- *
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
  * @property Model $subject
  * @property Model $maker
  * @property Model|null $checker
- *
- *
  *
  * @method static static create(array $attributes = [])
  * @method static static firstOrCreate(array $attributes, array $values = [])
@@ -58,11 +69,6 @@ use Moffhub\MakerChecker\Enums\RequestType;
  */
 class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
 {
-    use Searchable {
-        search as scoutSearch;
-    }
-    use Sortable;
-
     protected $guarded = ['id', 'code'];
 
     protected $casts = [
@@ -76,6 +82,12 @@ class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
         'required_approvals' => 'array',
         'team_id' => 'integer',
     ];
+
+    #[\Override]
+    public function getTable(): string
+    {
+        return config('maker-checker.table_name', 'maker_checker_requests');
+    }
 
     public static function allowedFilters(): array
     {
@@ -98,18 +110,6 @@ class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
         ];
     }
 
-    public static function search(string $query = '', ?Closure $callback = null): ScoutBuilder
-    {
-        return self::scoutSearch($query,
-            function (Builder $builder) use ($callback) {
-                $builder->select('maker_checker_requests.*');
-
-                if ($callback) {
-                    $callback($builder);
-                }
-            });
-    }
-
     /**
      * @throws Exception
      */
@@ -130,11 +130,13 @@ class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
             'checker_type' => $approver->getMorphClass(),
             'checker_id' => $approver->getKey(),
             'role' => $role,
-            'approved_at' => now(),
+            'approved_at' => now()->toIso8601String(),
         ];
 
         $this->update([
             'approvals' => $approvals,
+            'checker_type' => $approver->getMorphClass(),
+            'checker_id' => $approver->getKey(),
         ]);
     }
 
@@ -160,7 +162,7 @@ class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
 
     protected function defaultApprovalCount(): int
     {
-        return 1; // Default to 1 approval needed if no specific role requirements are provided
+        return (int) config('maker-checker.default_approval_count', 1);
     }
 
     public function getPendingRoles(): array
@@ -182,6 +184,24 @@ class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
         return $pendingRoles;
     }
 
+    /**
+     * Get the total number of approvals received.
+     */
+    public function getApprovalCount(): int
+    {
+        return count($this->approvals ?? []);
+    }
+
+    /**
+     * Get all approvers for this request.
+     *
+     * @return array<array{checker_type: string, checker_id: mixed, role: string, approved_at: string}>
+     */
+    public function getApprovers(): array
+    {
+        return $this->approvals ?? [];
+    }
+
     public function toSearchableArray(): array
     {
         return [
@@ -193,29 +213,107 @@ class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
         ];
     }
 
-    public function scopeVisibleTo(Builder $builder, User $user): Builder
+    /**
+     * Scope to filter requests visible to a user.
+     *
+     * The user can either:
+     * 1. Implement MakerCheckerUserContract for full control
+     * 2. Have hasMakerCheckerPermission(), getMakerCheckerTeamId() methods
+     * 3. Be any model (will only see own requests)
+     *
+     * @param  EloquentBuilder<static>  $builder
+     * @return EloquentBuilder<static>
+     */
+    public function scopeVisibleTo(EloquentBuilder $builder, Model $user): EloquentBuilder
     {
-        if ($user->hasPermission(Permission::MakerCheckerViewAny)) {
+        $viewAnyPermission = config('maker-checker.view_any_permission');
+
+        // Check if user can view all requests
+        if ($viewAnyPermission && $this->userHasPermission($user, $viewAnyPermission)) {
             return $builder;
         }
 
-        if ($user->company_id) {
-            return $builder->where('team_id', '=', $user->company_id);
+        // Check for team-based visibility
+        $teamId = $this->getUserTeamId($user);
+        if ($teamId !== null) {
+            return $builder->where('team_id', '=', $teamId);
         }
 
-        return $builder->where('maker_id', '=', $user->getKey());
+        // Default: only see own requests
+        return $builder->where('maker_id', '=', $user->getKey())
+            ->where('maker_type', '=', $user->getMorphClass());
     }
 
+    /**
+     * Check if user has a permission.
+     */
+    private function userHasPermission(Model $user, string $permission): bool
+    {
+        // Contract-based check
+        if ($user instanceof MakerCheckerUserContract) {
+            return $user->hasMakerCheckerPermission($permission);
+        }
+
+        // Method-based check (for backward compatibility)
+        if (method_exists($user, 'hasMakerCheckerPermission')) {
+            return $user->hasMakerCheckerPermission($permission);
+        }
+
+        // Generic hasPermission check
+        if (method_exists($user, 'hasPermission')) {
+            return $user->hasPermission($permission);
+        }
+
+        // Generic can check (Laravel's Gate)
+        if (method_exists($user, 'can')) {
+            return $user->can($permission);
+        }
+
+        return false;
+    }
+
+    /**
+     * Get the team ID for a user.
+     */
+    private function getUserTeamId(Model $user): ?int
+    {
+        if ($user instanceof MakerCheckerUserContract) {
+            return $user->getMakerCheckerTeamId();
+        }
+
+        if (method_exists($user, 'getMakerCheckerTeamId')) {
+            return $user->getMakerCheckerTeamId();
+        }
+
+        // Common property names for team/company ID
+        foreach (['team_id', 'company_id', 'organization_id', 'tenant_id'] as $property) {
+            if (isset($user->{$property})) {
+                return (int) $user->{$property};
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return MorphTo<Model, $this>
+     */
     public function subject(): MorphTo
     {
         return $this->morphTo()->withDefault();
     }
 
+    /**
+     * @return MorphTo<Model, $this>
+     */
     public function maker(): MorphTo
     {
         return $this->morphTo();
     }
 
+    /**
+     * @return MorphTo<Model, $this>
+     */
     public function checker(): MorphTo
     {
         return $this->morphTo()->withDefault();
@@ -224,6 +322,11 @@ class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
     public function isPending(): bool
     {
         return $this->isOfStatus(RequestStatus::PENDING);
+    }
+
+    public function isPartiallyApproved(): bool
+    {
+        return $this->isOfStatus(RequestStatus::PARTIALLY_APPROVED);
     }
 
     public function isOfStatus(RequestStatus $status): bool
@@ -256,13 +359,98 @@ class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
         return $this->isOfStatus(RequestStatus::FAILED);
     }
 
+    public function isCancelled(): bool
+    {
+        return $this->isOfStatus(RequestStatus::CANCELLED);
+    }
+
+    /**
+     * Check if the request can still be acted upon.
+     */
+    public function isActionable(): bool
+    {
+        if ($this->isPending()) {
+            return true;
+        }
+
+        return $this->isPartiallyApproved();
+    }
+
+    /**
+     * Check if the request has reached a final state.
+     */
+    public function isFinalized(): bool
+    {
+        return in_array($this->status, RequestStatus::getFinalizedStatuses(), true);
+    }
+
     public function isOfType(RequestType $type): bool
     {
         return $this->type === $type;
     }
 
+    /**
+     * @param  EloquentBuilder<static>  $query
+     * @return EloquentBuilder<static>
+     */
     public function scopeStatus(EloquentBuilder $query, RequestStatus $status): EloquentBuilder
     {
         return $query->where('status', $status);
+    }
+
+    /**
+     * @param  EloquentBuilder<static>  $query
+     * @return EloquentBuilder<static>
+     */
+    public function scopePending(EloquentBuilder $query): EloquentBuilder
+    {
+        return $query->where('status', RequestStatus::PENDING);
+    }
+
+    /**
+     * @param  EloquentBuilder<static>  $query
+     * @return EloquentBuilder<static>
+     */
+    public function scopePartiallyApproved(EloquentBuilder $query): EloquentBuilder
+    {
+        return $query->where('status', RequestStatus::PARTIALLY_APPROVED);
+    }
+
+    /**
+     * @param  EloquentBuilder<static>  $query
+     * @return EloquentBuilder<static>
+     */
+    public function scopeActionable(EloquentBuilder $query): EloquentBuilder
+    {
+        return $query->whereIn('status', [RequestStatus::PENDING, RequestStatus::PARTIALLY_APPROVED]);
+    }
+
+    /**
+     * @param  EloquentBuilder<static>  $query
+     * @return EloquentBuilder<static>
+     */
+    public function scopeOfType(EloquentBuilder $query, RequestType $type): EloquentBuilder
+    {
+        return $query->where('type', $type);
+    }
+
+    /**
+     * @param  EloquentBuilder<static>  $query
+     * @return EloquentBuilder<static>
+     */
+    public function scopeForSubject(EloquentBuilder $query, Model $subject): EloquentBuilder
+    {
+        return $query
+            ->where('subject_type', $subject->getMorphClass())
+            ->where('subject_id', $subject->getKey());
+    }
+
+    /**
+     * @param  EloquentBuilder<static>  $query
+     * @return EloquentBuilder<static>
+     */
+    public function scopeForTeam(EloquentBuilder $query, int $teamId): EloquentBuilder
+    {
+        return $query->where('team_id', $teamId);
     }
 }
