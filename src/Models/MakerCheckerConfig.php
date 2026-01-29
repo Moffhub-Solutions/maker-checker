@@ -233,7 +233,7 @@ class MakerCheckerConfig extends Model
      */
     public function hasConditions(): bool
     {
-        return $this->conditions !== null && ! empty($this->conditions['rules'] ?? []);
+        return $this->conditions !== null && !empty($this->conditions['rules'] ?? []);
     }
 
     /**

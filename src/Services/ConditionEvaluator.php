@@ -75,7 +75,7 @@ class ConditionEvaluator
 
         // Apply logical operator
         return $mode === 'all'
-            ? ! in_array(false, $results, true)  // AND: all must be true
+            ? !in_array(false, $results, true)  // AND: all must be true
             : in_array(true, $results, true);    // OR: at least one true
     }
 
@@ -94,7 +94,7 @@ class ConditionEvaluator
         $operator = $rule['operator'] ?? '=';
         $compareValue = $rule['value'] ?? null;
 
-        if (! in_array($operator, self::OPERATORS, true)) {
+        if (!in_array($operator, self::OPERATORS, true)) {
             throw new InvalidArgumentException("Unsupported operator: {$operator}");
         }
 
@@ -103,13 +103,13 @@ class ConditionEvaluator
 
         return match ($operator) {
             '=' => $this->equals($fieldValue, $compareValue),
-            '!=' => ! $this->equals($fieldValue, $compareValue),
+            '!=' => !$this->equals($fieldValue, $compareValue),
             '>' => $this->greaterThan($fieldValue, $compareValue),
             '>=' => $this->greaterThanOrEqual($fieldValue, $compareValue),
             '<' => $this->lessThan($fieldValue, $compareValue),
             '<=' => $this->lessThanOrEqual($fieldValue, $compareValue),
             'in' => $this->in($fieldValue, $compareValue),
-            'not_in' => ! $this->in($fieldValue, $compareValue),
+            'not_in' => !$this->in($fieldValue, $compareValue),
             'contains' => $this->contains($fieldValue, $compareValue),
             'starts_with' => $this->startsWith($fieldValue, $compareValue),
             'ends_with' => $this->endsWith($fieldValue, $compareValue),
@@ -136,7 +136,7 @@ class ConditionEvaluator
 
         // Validate mode
         $mode = $conditions['mode'] ?? 'all';
-        if (! in_array($mode, ['all', 'any'], true)) {
+        if (!in_array($mode, ['all', 'any'], true)) {
             $errors[] = "Invalid mode: '{$mode}'. Must be 'all' or 'any'.";
         }
 
@@ -169,23 +169,23 @@ class ConditionEvaluator
     {
         $errors = [];
 
-        if (! isset($rule['field']) || ! is_string($rule['field']) || $rule['field'] === '') {
+        if (!isset($rule['field']) || !is_string($rule['field']) || $rule['field'] === '') {
             $errors[] = "Rule {$index}: 'field' is required and must be a non-empty string.";
         }
 
         $operator = $rule['operator'] ?? '=';
-        if (! in_array($operator, self::OPERATORS, true)) {
+        if (!in_array($operator, self::OPERATORS, true)) {
             $errors[] = "Rule {$index}: Unsupported operator '{$operator}'. Supported: ".implode(', ', self::OPERATORS);
         }
 
         // Validate value based on operator
-        if (in_array($operator, ['in', 'not_in'], true) && ! is_array($rule['value'] ?? null)) {
+        if (in_array($operator, ['in', 'not_in'], true) && !is_array($rule['value'] ?? null)) {
             $errors[] = "Rule {$index}: Operator '{$operator}' requires an array value.";
         }
 
         if ($operator === 'between') {
             $value = $rule['value'] ?? null;
-            if (! is_array($value) || count($value) !== 2) {
+            if (!is_array($value) || count($value) !== 2) {
                 $errors[] = "Rule {$index}: Operator 'between' requires an array with exactly 2 values.";
             }
         }
@@ -219,7 +219,7 @@ class ConditionEvaluator
 
     private function greaterThan(mixed $fieldValue, mixed $compareValue): bool
     {
-        if (! is_numeric($fieldValue) || ! is_numeric($compareValue)) {
+        if (!is_numeric($fieldValue) || !is_numeric($compareValue)) {
             return false;
         }
 
@@ -228,7 +228,7 @@ class ConditionEvaluator
 
     private function greaterThanOrEqual(mixed $fieldValue, mixed $compareValue): bool
     {
-        if (! is_numeric($fieldValue) || ! is_numeric($compareValue)) {
+        if (!is_numeric($fieldValue) || !is_numeric($compareValue)) {
             return false;
         }
 
@@ -237,7 +237,7 @@ class ConditionEvaluator
 
     private function lessThan(mixed $fieldValue, mixed $compareValue): bool
     {
-        if (! is_numeric($fieldValue) || ! is_numeric($compareValue)) {
+        if (!is_numeric($fieldValue) || !is_numeric($compareValue)) {
             return false;
         }
 
@@ -246,7 +246,7 @@ class ConditionEvaluator
 
     private function lessThanOrEqual(mixed $fieldValue, mixed $compareValue): bool
     {
-        if (! is_numeric($fieldValue) || ! is_numeric($compareValue)) {
+        if (!is_numeric($fieldValue) || !is_numeric($compareValue)) {
             return false;
         }
 
@@ -255,7 +255,7 @@ class ConditionEvaluator
 
     private function in(mixed $fieldValue, mixed $compareValue): bool
     {
-        if (! is_array($compareValue)) {
+        if (!is_array($compareValue)) {
             return false;
         }
 
@@ -264,7 +264,7 @@ class ConditionEvaluator
 
     private function contains(mixed $fieldValue, mixed $compareValue): bool
     {
-        if (! is_string($fieldValue) || ! is_string($compareValue)) {
+        if (!is_string($fieldValue) || !is_string($compareValue)) {
             return false;
         }
 
@@ -273,7 +273,7 @@ class ConditionEvaluator
 
     private function startsWith(mixed $fieldValue, mixed $compareValue): bool
     {
-        if (! is_string($fieldValue) || ! is_string($compareValue)) {
+        if (!is_string($fieldValue) || !is_string($compareValue)) {
             return false;
         }
 
@@ -282,7 +282,7 @@ class ConditionEvaluator
 
     private function endsWith(mixed $fieldValue, mixed $compareValue): bool
     {
-        if (! is_string($fieldValue) || ! is_string($compareValue)) {
+        if (!is_string($fieldValue) || !is_string($compareValue)) {
             return false;
         }
 
@@ -291,12 +291,12 @@ class ConditionEvaluator
 
     private function between(mixed $fieldValue, mixed $compareValue): bool
     {
-        if (! is_numeric($fieldValue) || ! is_array($compareValue) || count($compareValue) !== 2) {
+        if (!is_numeric($fieldValue) || !is_array($compareValue) || count($compareValue) !== 2) {
             return false;
         }
 
         [$min, $max] = $compareValue;
-        if (! is_numeric($min) || ! is_numeric($max)) {
+        if (!is_numeric($min) || !is_numeric($max)) {
             return false;
         }
 
@@ -307,7 +307,7 @@ class ConditionEvaluator
 
     private function matchesRegex(mixed $fieldValue, mixed $pattern): bool
     {
-        if (! is_string($fieldValue) || ! is_string($pattern)) {
+        if (!is_string($fieldValue) || !is_string($pattern)) {
             return false;
         }
 
