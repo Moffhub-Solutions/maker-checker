@@ -8,6 +8,10 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Moffhub\MakerChecker\Enums\RequestType;
+use Moffhub\MakerChecker\Http\Requests\ImportConfigsRequest;
+use Moffhub\MakerChecker\Http\Requests\StoreConfigRequest;
+use Moffhub\MakerChecker\Http\Requests\TestConditionsRequest;
+use Moffhub\MakerChecker\Http\Requests\UpdateConfigRequest;
 use Moffhub\MakerChecker\Models\MakerCheckerConfig;
 use Moffhub\MakerChecker\Repositories\ConfigRepository;
 use Moffhub\MakerChecker\Services\ConditionEvaluator;
@@ -76,41 +80,14 @@ class MakerCheckerConfigController extends Controller
      * @bodyParam team_id integer Optional team ID for multi-tenant configs
      * @bodyParam description string Optional human-readable description
      */
-    public function store(Request $request): JsonResponse
+    public function store(StoreConfigRequest $request): JsonResponse
     {
-        $request->validate([
-            'configurable_type' => 'required|string',
-            'action' => 'nullable|string|in:create,update,delete,execute',
-            'approvals' => 'nullable|array',
-            'unique_fields' => 'nullable|array',
-            'unique_fields.*' => 'string',
-            'conditions' => 'nullable|array',
-            'priority' => 'nullable|integer|min:0|max:10000',
-            'team_id' => 'nullable|integer',
-            'description' => 'nullable|string|max:500',
-        ]);
-
-        // Validate conditions structure if provided
-        $conditions = $request->input('conditions');
-        if ($conditions !== null) {
-            $evaluator = new ConditionEvaluator;
-            $errors = $evaluator->validate($conditions);
-            if ($errors !== []) {
-                return response()->json([
-                    'message' => 'Invalid conditions structure',
-                    'errors' => ['conditions' => $errors],
-                ], 422);
-            }
-        }
-
-        $approvals = $this->normalizeApprovals($request->input('approvals', []));
-
         $config = $this->repository->create([
             'configurable_type' => $request->input('configurable_type'),
             'action' => $request->input('action'),
-            'approvals' => $approvals,
+            'approvals' => $request->normalizedApprovals(),
             'unique_fields' => $request->input('unique_fields', []),
-            'conditions' => $conditions,
+            'conditions' => $request->input('conditions'),
             'priority' => $request->input('priority', 0),
             'team_id' => $request->input('team_id'),
             'description' => $request->input('description'),
@@ -147,56 +124,9 @@ class MakerCheckerConfigController extends Controller
      * @bodyParam description string Optional human-readable description
      * @bodyParam is_active boolean Whether the config is active
      */
-    public function update(Request $request, MakerCheckerConfig $config): JsonResponse
+    public function update(UpdateConfigRequest $request, MakerCheckerConfig $config): JsonResponse
     {
-        $request->validate([
-            'approvals' => 'nullable|array',
-            'unique_fields' => 'nullable|array',
-            'unique_fields.*' => 'string',
-            'conditions' => 'nullable|array',
-            'priority' => 'nullable|integer|min:0|max:10000',
-            'description' => 'nullable|string|max:500',
-            'is_active' => 'nullable|boolean',
-        ]);
-
-        $updateData = [];
-
-        if ($request->has('approvals')) {
-            $updateData['approvals'] = $this->normalizeApprovals($request->input('approvals', []));
-        }
-
-        if ($request->has('unique_fields')) {
-            $updateData['unique_fields'] = $request->input('unique_fields');
-        }
-
-        if ($request->has('conditions')) {
-            $conditions = $request->input('conditions');
-            if ($conditions !== null) {
-                $evaluator = new ConditionEvaluator;
-                $errors = $evaluator->validate($conditions);
-                if ($errors !== []) {
-                    return response()->json([
-                        'message' => 'Invalid conditions structure',
-                        'errors' => ['conditions' => $errors],
-                    ], 422);
-                }
-            }
-            $updateData['conditions'] = $conditions;
-        }
-
-        if ($request->has('priority')) {
-            $updateData['priority'] = $request->input('priority');
-        }
-
-        if ($request->has('description')) {
-            $updateData['description'] = $request->input('description');
-        }
-
-        if ($request->has('is_active')) {
-            $updateData['is_active'] = $request->boolean('is_active');
-        }
-
-        $config = $this->repository->update($config, $updateData);
+        $config = $this->repository->update($config, $request->getUpdateData());
 
         return response()->json([
             'message' => 'Configuration updated successfully',
@@ -247,28 +177,9 @@ class MakerCheckerConfigController extends Controller
      *
      * @bodyParam configs array required Array of configuration objects
      */
-    public function import(Request $request): JsonResponse
+    public function import(ImportConfigsRequest $request): JsonResponse
     {
-        $request->validate([
-            'configs' => 'required|array',
-            'configs.*.configurable_type' => 'required|string',
-            'configs.*.action' => 'nullable|string|in:create,update,delete,execute',
-            'configs.*.approvals' => 'nullable|array',
-            'configs.*.unique_fields' => 'nullable|array',
-            'configs.*.team_id' => 'nullable|integer',
-            'configs.*.description' => 'nullable|string|max:500',
-        ]);
-
-        // Normalize approvals in each config
-        $configs = array_map(function ($config) {
-            if (isset($config['approvals'])) {
-                $config['approvals'] = $this->normalizeApprovals($config['approvals']);
-            }
-
-            return $config;
-        }, $request->input('configs', []));
-
-        $configs = $this->repository->import($configs);
+        $configs = $this->repository->import($request->normalizedConfigs());
 
         return response()->json([
             'message' => sprintf('%d configuration(s) imported successfully', $configs->count()),
@@ -328,15 +239,8 @@ class MakerCheckerConfigController extends Controller
      * @bodyParam payload object required The test payload to evaluate
      * @bodyParam team_id integer Optional team ID
      */
-    public function testConditions(Request $request): JsonResponse
+    public function testConditions(TestConditionsRequest $request): JsonResponse
     {
-        $request->validate([
-            'configurable_type' => 'required|string',
-            'action' => 'required|string|in:create,update,delete,execute',
-            'payload' => 'required|array',
-            'team_id' => 'nullable|integer',
-        ]);
-
         $configs = $this->repository->getCandidateConfigs(
             $request->input('configurable_type'),
             RequestType::from($request->input('action')),
@@ -403,21 +307,5 @@ class MakerCheckerConfigController extends Controller
             'created_at' => $config->created_at->toIso8601String(),
             'updated_at' => $config->updated_at->toIso8601String(),
         ];
-    }
-
-    /**
-     * Normalize approvals structure.
-     *
-     * Expected format:
-     * ['roles' => ['admin' => 1], 'users' => ['user@example.com']]
-     *
-     * @return array{roles?: array<string, int>, users?: array<string>}
-     */
-    protected function normalizeApprovals(array $approvals): array
-    {
-        return array_filter([
-            'roles' => $approvals['roles'] ?? [],
-            'users' => $approvals['users'] ?? [],
-        ], fn($v) => !empty($v));
     }
 }

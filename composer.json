@@ -30,7 +30,8 @@
         "orchestra/testbench": "^10.6",
         "phpstan/phpstan": "^2.1",
         "phpunit/phpunit": "^11.5",
-        "rector/rector": "^2.0"
+        "rector/rector": "^2.0",
+        "sourcetoad/rule-helper-for-laravel": "^6.2"
     },
     "config": {
         "sort-packages": true

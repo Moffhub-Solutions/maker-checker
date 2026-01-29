@@ -84,7 +84,7 @@ class ConditionalConfigTest extends BaseTestCase
             ]);
 
         $response->assertStatus(422)
-            ->assertJsonPath('message', 'Invalid conditions structure');
+            ->assertJsonValidationErrors('conditions');
     }
 
     public function test_validates_rule_operators(): void

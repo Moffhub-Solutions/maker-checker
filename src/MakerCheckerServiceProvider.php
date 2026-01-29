@@ -65,6 +65,12 @@ class MakerCheckerServiceProvider extends ServiceProvider
             ], 'maker-checker-config-migration');
         }
 
+        if (!$this->migrationExists('add_conditions_to_maker_checker_configs_table')) {
+            $this->publishes([
+                __DIR__.'/Database/Migrations/add_conditions_to_maker_checker_configs_table.php.stub' => $this->getMigrationFilePath('add_conditions_to_maker_checker_configs_table'),
+            ], 'maker-checker-conditions-migration');
+        }
+
         // Publish all migrations at once (only those that don't exist)
         $migrations = [];
         if (!$this->migrationExists('create_maker_checker_requests_table')) {
@@ -72,6 +78,9 @@ class MakerCheckerServiceProvider extends ServiceProvider
         }
         if (!$this->migrationExists('create_maker_checker_configs_table')) {
             $migrations[__DIR__.'/Database/Migrations/create_maker_checker_configs_table.php.stub'] = $this->getMigrationFilePath('create_maker_checker_configs_table');
+        }
+        if (!$this->migrationExists('add_conditions_to_maker_checker_configs_table')) {
+            $migrations[__DIR__.'/Database/Migrations/add_conditions_to_maker_checker_configs_table.php.stub'] = $this->getMigrationFilePath('add_conditions_to_maker_checker_configs_table');
         }
         if (!empty($migrations)) {
             $this->publishes($migrations, 'maker-checker-migrations');

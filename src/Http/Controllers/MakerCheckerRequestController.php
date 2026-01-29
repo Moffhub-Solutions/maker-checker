@@ -12,6 +12,9 @@ use Moffhub\MakerChecker\Contracts\MakerCheckerUserContract;
 use Moffhub\MakerChecker\Enums\RequestStatus;
 use Moffhub\MakerChecker\Enums\RequestType;
 use Moffhub\MakerChecker\Facades\MakerChecker;
+use Moffhub\MakerChecker\Http\Requests\ApproveRequest;
+use Moffhub\MakerChecker\Http\Requests\CancelRequest;
+use Moffhub\MakerChecker\Http\Requests\RejectRequest;
 use Moffhub\MakerChecker\Http\Resources\MakerCheckerResource;
 use Moffhub\MakerChecker\MakerCheckerServiceProvider;
 use Moffhub\MakerChecker\Models\MakerCheckerRequest;
@@ -150,20 +153,15 @@ class MakerCheckerRequestController extends Controller
      * @bodyParam role string The role under which to approve
      * @bodyParam remarks string Optional approval remarks
      */
-    public function approve(Request $request, int $id): JsonResponse
+    public function approve(ApproveRequest $request, int $id): JsonResponse
     {
         $requestModel = MakerCheckerServiceProvider::getRequestModelClass();
         $mcRequest = $requestModel::findOrFail($id);
 
         $user = $this->getAuthenticatedUser($request);
 
-        $validated = $request->validate([
-            'role' => 'nullable|string',
-            'remarks' => 'nullable|string|max:1000',
-        ]);
-
-        $role = $validated['role'] ?? $this->getUserRole($user);
-        $remarks = $validated['remarks'] ?? null;
+        $role = $request->input('role') ?? $this->getUserRole($user);
+        $remarks = $request->input('remarks');
 
         $mcRequest = MakerChecker::approve($mcRequest, $user, $role, $remarks);
 
@@ -178,18 +176,14 @@ class MakerCheckerRequestController extends Controller
      *
      * @bodyParam remarks string Optional rejection remarks
      */
-    public function reject(Request $request, int $id): JsonResponse
+    public function reject(RejectRequest $request, int $id): JsonResponse
     {
         $requestModel = MakerCheckerServiceProvider::getRequestModelClass();
         $mcRequest = $requestModel::findOrFail($id);
 
         $user = $this->getAuthenticatedUser($request);
 
-        $validated = $request->validate([
-            'remarks' => 'nullable|string|max:1000',
-        ]);
-
-        $mcRequest = MakerChecker::reject($mcRequest, $user, $validated['remarks'] ?? null);
+        $mcRequest = MakerChecker::reject($mcRequest, $user, $request->input('remarks'));
 
         return response()->json([
             'message' => 'Request rejected successfully',
@@ -202,18 +196,14 @@ class MakerCheckerRequestController extends Controller
      *
      * @bodyParam remarks string Optional cancellation remarks
      */
-    public function cancel(Request $request, int $id): JsonResponse
+    public function cancel(CancelRequest $request, int $id): JsonResponse
     {
         $requestModel = MakerCheckerServiceProvider::getRequestModelClass();
         $mcRequest = $requestModel::findOrFail($id);
 
         $user = $this->getAuthenticatedUser($request);
 
-        $validated = $request->validate([
-            'remarks' => 'nullable|string|max:1000',
-        ]);
-
-        $mcRequest = MakerChecker::cancel($mcRequest, $user, $validated['remarks'] ?? null);
+        $mcRequest = MakerChecker::cancel($mcRequest, $user, $request->input('remarks'));
 
         return response()->json([
             'message' => 'Request cancelled successfully',

@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "45517f0225bcb1837fb7dedaba2671e2",
+    "content-hash": "ba588c83591b001ff94ce7552598b17d",
     "packages": [
         {
             "name": "brick/math",
@@ -8771,6 +8771,55 @@
                 }
             ],
             "time": "2024-10-09T05:16:32+00:00"
+        },
+        {
+            "name": "sourcetoad/rule-helper-for-laravel",
+            "version": "v6.2.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/sourcetoad/rule-helper-for-laravel.git",
+                "reference": "01f76d8e7acde91a0ec24fa4a96beacf6fbbcb79"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/sourcetoad/rule-helper-for-laravel/zipball/01f76d8e7acde91a0ec24fa4a96beacf6fbbcb79",
+                "reference": "01f76d8e7acde91a0ec24fa4a96beacf6fbbcb79",
+                "shasum": ""
+            },
+            "require": {
+                "laravel/framework": "^12.21",
+                "php": "^8.2||^8.3||^8.4"
+            },
+            "require-dev": {
+                "ext-json": "*",
+                "larastan/larastan": "^3.0",
+                "laravel/pint": "1.21",
+                "orchestra/testbench": "^10.0",
+                "phpunit/phpunit": "^11.5"
+            },
+            "type": "library",
+            "extra": {
+                "laravel": {
+                    "providers": [
+                        "Sourcetoad\\RuleHelper\\RuleHelperServiceProvider"
+                    ]
+                }
+            },
+            "autoload": {
+                "psr-4": {
+                    "Sourcetoad\\RuleHelper\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "description": "Rule helper for Laravel",
+            "support": {
+                "issues": "https://github.com/sourcetoad/rule-helper-for-laravel/issues",
+                "source": "https://github.com/sourcetoad/rule-helper-for-laravel/tree/v6.2.0"
+            },
+            "time": "2025-07-24T14:46:55+00:00"
         },
         {
             "name": "staabm/side-effects-detector",
