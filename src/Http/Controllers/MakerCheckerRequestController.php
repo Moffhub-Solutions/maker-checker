@@ -310,20 +310,7 @@ class MakerCheckerRequestController extends Controller
      */
     protected function isFullyApproved(MakerCheckerRequest $request): bool
     {
-        $required = $request->required_approvals ?? [];
-        $current = $request->approvals ?? [];
-
-        if (empty($required)) {
-            return !empty($current);
-        }
-
-        foreach ($required as $role => $count) {
-            if (($current[$role] ?? 0) < $count) {
-                return false;
-            }
-        }
-
-        return true;
+        return $request->hasMetApprovalThreshold();
     }
 
     /**
@@ -333,17 +320,6 @@ class MakerCheckerRequestController extends Controller
      */
     protected function getPendingRoles(MakerCheckerRequest $request): array
     {
-        $required = $request->required_approvals ?? [];
-        $current = $request->approvals ?? [];
-        $pending = [];
-
-        foreach ($required as $role => $count) {
-            $remaining = $count - ($current[$role] ?? 0);
-            if ($remaining > 0) {
-                $pending[$role] = $remaining;
-            }
-        }
-
-        return $pending;
+        return $request->getPendingRoles();
     }
 }

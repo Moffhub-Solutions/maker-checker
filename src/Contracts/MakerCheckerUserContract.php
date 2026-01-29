@@ -7,14 +7,12 @@ namespace Moffhub\MakerChecker\Contracts;
 /**
  * Contract for user models that participate in the maker-checker workflow.
  * Implement this interface on your User model to enable visibility scoping.
+ *
+ * Note: This interface is designed to be implemented by Eloquent models,
+ * which already have getKey() and getMorphClass() methods.
  */
 interface MakerCheckerUserContract
 {
-    /**
-     * Get the unique identifier for the user.
-     */
-    public function getKey(): mixed;
-
     /**
      * Check if the user has a specific permission.
      */

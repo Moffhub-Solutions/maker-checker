@@ -10,3 +10,5 @@ parameters:
       - identifier: method.alreadyNarrowedType
       - identifier: method.notFound
       - identifier: return.type
+      - identifier: staticMethod.notFound
+      - identifier: argument.templateType
