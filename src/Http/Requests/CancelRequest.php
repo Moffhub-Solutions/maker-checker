@@ -26,6 +26,11 @@ class CancelRequest extends FormRequest
                 Rule::string(),
                 Rule::max(1000),
             ],
+            'note' => [
+                Rule::nullable(),
+                Rule::string(),
+                Rule::max(5000),
+            ],
         ];
     }
 }

@@ -13,10 +13,12 @@ use Moffhub\MakerChecker\Enums\RequestStatus;
 use Moffhub\MakerChecker\Enums\RequestType;
 use Moffhub\MakerChecker\Facades\MakerChecker;
 use Moffhub\MakerChecker\Http\Requests\ApproveRequest;
+use Moffhub\MakerChecker\Http\Requests\BulkApproveRequest;
 use Moffhub\MakerChecker\Http\Requests\CancelRequest;
 use Moffhub\MakerChecker\Http\Requests\RejectRequest;
 use Moffhub\MakerChecker\Http\Resources\MakerCheckerResource;
 use Moffhub\MakerChecker\MakerCheckerServiceProvider;
+use Moffhub\MakerChecker\Models\MakerCheckerApprovalNote;
 use Moffhub\MakerChecker\Models\MakerCheckerRequest;
 
 /**
@@ -152,6 +154,7 @@ class MakerCheckerRequestController extends Controller
      *
      * @bodyParam role string The role under which to approve
      * @bodyParam remarks string Optional approval remarks
+     * @bodyParam note string Optional approval note
      */
     public function approve(ApproveRequest $request, int $id): JsonResponse
     {
@@ -165,6 +168,8 @@ class MakerCheckerRequestController extends Controller
 
         $mcRequest = MakerChecker::approve($mcRequest, $user, $role, $remarks);
 
+        $this->saveNoteIfProvided($request, $mcRequest, $user, 'approved');
+
         return response()->json([
             'message' => 'Request approved successfully',
             'data' => MakerCheckerResource::make($mcRequest)->format(MakerCheckerResource::BASE),
@@ -175,6 +180,7 @@ class MakerCheckerRequestController extends Controller
      * Reject a request.
      *
      * @bodyParam remarks string Optional rejection remarks
+     * @bodyParam note string Optional rejection note
      */
     public function reject(RejectRequest $request, int $id): JsonResponse
     {
@@ -184,6 +190,8 @@ class MakerCheckerRequestController extends Controller
         $user = $this->getAuthenticatedUser($request);
 
         $mcRequest = MakerChecker::reject($mcRequest, $user, $request->input('remarks'));
+
+        $this->saveNoteIfProvided($request, $mcRequest, $user, 'rejected');
 
         return response()->json([
             'message' => 'Request rejected successfully',
@@ -195,6 +203,7 @@ class MakerCheckerRequestController extends Controller
      * Cancel a request (only by the maker).
      *
      * @bodyParam remarks string Optional cancellation remarks
+     * @bodyParam note string Optional cancellation note
      */
     public function cancel(CancelRequest $request, int $id): JsonResponse
     {
@@ -205,9 +214,90 @@ class MakerCheckerRequestController extends Controller
 
         $mcRequest = MakerChecker::cancel($mcRequest, $user, $request->input('remarks'));
 
+        $this->saveNoteIfProvided($request, $mcRequest, $user, 'cancelled');
+
         return response()->json([
             'message' => 'Request cancelled successfully',
             'data' => MakerCheckerResource::make($mcRequest)->format(MakerCheckerResource::BASE),
+        ]);
+    }
+
+    /**
+     * Rollback an approved request.
+     *
+     * @bodyParam remarks string Optional rollback remarks
+     * @bodyParam note string Optional rollback note
+     */
+    public function rollback(Request $request, int $id): JsonResponse
+    {
+        $requestModel = MakerCheckerServiceProvider::getRequestModelClass();
+        $mcRequest = $requestModel::findOrFail($id);
+
+        $user = $this->getAuthenticatedUser($request);
+
+        $mcRequest = MakerChecker::rollback($mcRequest, $user, $request->input('remarks'));
+
+        $this->saveNoteIfProvided($request, $mcRequest, $user, 'rolled_back');
+
+        return response()->json([
+            'message' => 'Request rolled back successfully',
+            'data' => MakerCheckerResource::make($mcRequest)->format(MakerCheckerResource::BASE),
+        ]);
+    }
+
+    /**
+     * Bulk approve multiple requests.
+     *
+     * @bodyParam request_ids array Required array of request IDs to approve
+     * @bodyParam role string Optional role for approval
+     * @bodyParam remarks string Optional remarks
+     */
+    public function bulkApprove(BulkApproveRequest $request): JsonResponse
+    {
+        $user = $this->getAuthenticatedUser($request);
+        $requestModel = MakerCheckerServiceProvider::getRequestModelClass();
+
+        $requestIds = $request->input('request_ids', []);
+        $role = $request->input('role') ?? $this->getUserRole($user);
+        $remarks = $request->input('remarks');
+
+        $approved = 0;
+        $failed = 0;
+        $errors = [];
+
+        foreach ($requestIds as $requestId) {
+            try {
+                $mcRequest = $requestModel::find($requestId);
+
+                if (!$mcRequest) {
+                    $failed++;
+                    $errors[] = ['id' => $requestId, 'error' => 'Request not found.'];
+
+                    continue;
+                }
+
+                if (!$mcRequest->isActionable()) {
+                    $failed++;
+                    $errors[] = ['id' => $requestId, 'error' => "Request is in '{$mcRequest->status->value}' status and cannot be approved."];
+
+                    continue;
+                }
+
+                MakerChecker::approve($mcRequest, $user, $role, $remarks);
+                $approved++;
+            } catch (\Throwable $e) {
+                $failed++;
+                $errors[] = ['id' => $requestId, 'error' => $e->getMessage()];
+            }
+        }
+
+        return response()->json([
+            'message' => "Bulk approval completed: {$approved} approved, {$failed} failed.",
+            'data' => [
+                'approved' => $approved,
+                'failed' => $failed,
+                'errors' => $errors,
+            ],
         ]);
     }
 
@@ -265,6 +355,24 @@ class MakerCheckerRequestController extends Controller
                 'is_finalized' => $status->isFinalized(),
             ]),
         ]);
+    }
+
+    /**
+     * Save an approval note if one was provided in the request.
+     */
+    protected function saveNoteIfProvided(Request $request, MakerCheckerRequest $mcRequest, Model $user, string $action): void
+    {
+        $note = $request->input('note');
+
+        if ($note !== null && $note !== '') {
+            MakerCheckerApprovalNote::create([
+                'request_id' => $mcRequest->getKey(),
+                'user_type' => $user->getMorphClass(),
+                'user_id' => $user->getKey(),
+                'action' => $action,
+                'note' => $note,
+            ]);
+        }
     }
 
     /**

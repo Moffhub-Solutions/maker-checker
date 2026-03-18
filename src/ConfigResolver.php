@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Moffhub\MakerChecker;
 
+use Moffhub\MakerChecker\Contracts\ConfigResolverInterface;
 use Moffhub\MakerChecker\Contracts\MakerCheckerConfigurable;
 use Moffhub\MakerChecker\Enums\RequestType;
 use Moffhub\MakerChecker\Models\MakerCheckerConfig;
@@ -25,7 +26,7 @@ use Moffhub\MakerChecker\Repositories\ConfigRepository;
  * 6. Config file global_approvals
  * 7. Config file default_approval_count
  */
-class ConfigResolver
+class ConfigResolver implements ConfigResolverInterface
 {
     private ?ConfigRepository $repository = null;
 

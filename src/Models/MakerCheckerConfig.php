@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Moffhub\MakerChecker\Models;
 
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Moffhub\MakerChecker\Database\Factories\MakerCheckerConfigFactory;
 use Moffhub\MakerChecker\Enums\RequestType;
 use Moffhub\MakerChecker\Services\ConditionEvaluator;
 
@@ -48,7 +50,15 @@ use Moffhub\MakerChecker\Services\ConditionEvaluator;
  */
 class MakerCheckerConfig extends Model
 {
+    /** @use HasFactory<MakerCheckerConfigFactory> */
+    use HasFactory;
+
     protected $guarded = ['id'];
+
+    protected static function newFactory(): MakerCheckerConfigFactory
+    {
+        return MakerCheckerConfigFactory::new();
+    }
 
     protected $casts = [
         'approvals' => 'array',

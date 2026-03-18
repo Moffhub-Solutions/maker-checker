@@ -222,10 +222,13 @@ class NotificationServiceTest extends BaseTestCase
             ->save();
 
         // Editor approves
-        MakerChecker::approve($request, $editor, 'editor');
+        $request = MakerChecker::approve($request, $editor, 'editor');
 
         // Reset notification fake to only track next approvers
         Notification::fake();
+
+        // Refresh request to get updated approvals state
+        $request->refresh();
 
         // Manually notify next approvers
         MakerChecker::notifyNextApprovers($request);

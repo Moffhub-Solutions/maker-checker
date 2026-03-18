@@ -13,3 +13,7 @@ parameters:
       - identifier: staticMethod.notFound
       - identifier: argument.templateType
       - identifier: staticProperty.notFound
+      -
+        message: '#assertNull\(\) with int will always evaluate to false#'
+        identifier: method.impossibleType
+        path: tests/Unit/FactoryTest.php

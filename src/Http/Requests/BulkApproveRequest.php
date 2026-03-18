@@ -8,7 +8,7 @@ use Illuminate\Contracts\Validation\ValidationRule;
 use Illuminate\Foundation\Http\FormRequest;
 use Sourcetoad\RuleHelper\Rule;
 
-class RejectRequest extends FormRequest
+class BulkApproveRequest extends FormRequest
 {
     public function authorize(): bool
     {
@@ -21,15 +21,21 @@ class RejectRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'request_ids' => [
+                Rule::required(),
+                Rule::array(),
+            ],
+            'request_ids.*' => [
+                Rule::integer(),
+            ],
+            'role' => [
+                Rule::nullable(),
+                Rule::string(),
+            ],
             'remarks' => [
                 Rule::nullable(),
                 Rule::string(),
                 Rule::max(1000),
-            ],
-            'note' => [
-                Rule::nullable(),
-                Rule::string(),
-                Rule::max(5000),
             ],
         ];
     }

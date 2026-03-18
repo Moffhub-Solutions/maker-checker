@@ -33,6 +33,8 @@ abstract class BaseTestCase extends TestCase
         $app['config']->set('maker-checker.default_approval_count', 1);
         $app['config']->set('maker-checker.ensure_requests_are_unique', false);
         $app['config']->set('maker-checker.delete_on_completion', false);
+        $app['config']->set('maker-checker.notifications.user_model', \Moffhub\MakerChecker\Tests\Fixtures\Models\User::class);
+        $app['config']->set('auth.providers.users.model', \Moffhub\MakerChecker\Tests\Fixtures\Models\User::class);
     }
 
     protected function defineDatabaseMigrations(): void

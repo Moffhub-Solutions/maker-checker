@@ -1,8 +1,29 @@
 {
     "name": "moffhub/maker-checker",
-    "description": "A laravel package to help manage with maker checker tight requirement",
-    "type": "project",
+    "description": "Enterprise-grade maker-checker (four-eyes) approval workflow for Laravel. Multi-role approvals, conditional rules engine, delegation, audit trail, bulk actions, and auto-intercept via Eloquent events.",
+    "type": "library",
     "license": "MIT",
+    "keywords": [
+        "laravel",
+        "maker-checker",
+        "approval-workflow",
+        "four-eyes",
+        "authorization",
+        "approval",
+        "workflow",
+        "multi-level-approval",
+        "audit-trail",
+        "delegation",
+        "role-based",
+        "pending-approval",
+        "eloquent",
+        "laravel-package"
+    ],
+    "homepage": "https://github.com/moffhub/maker-checker",
+    "support": {
+        "issues": "https://github.com/moffhub/maker-checker/issues",
+        "source": "https://github.com/moffhub/maker-checker"
+    },
     "autoload": {
         "psr-4": {
             "Moffhub\\MakerChecker\\": "src/"

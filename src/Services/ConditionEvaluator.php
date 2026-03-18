@@ -6,6 +6,7 @@ namespace Moffhub\MakerChecker\Services;
 
 use Illuminate\Support\Arr;
 use InvalidArgumentException;
+use Moffhub\MakerChecker\Contracts\ConditionEvaluatorInterface;
 
 /**
  * Evaluates conditional rules against a payload.
@@ -25,7 +26,7 @@ use InvalidArgumentException;
  *     ]
  * }
  */
-class ConditionEvaluator
+class ConditionEvaluator implements ConditionEvaluatorInterface
 {
     /**
      * Supported operators.
@@ -116,7 +117,7 @@ class ConditionEvaluator
             'is_null' => $fieldValue === null,
             'is_not_null' => $fieldValue !== null,
             'between' => $this->between($fieldValue, $compareValue),
-            default => $this->matchesRegex($fieldValue, $compareValue), // 'regex'
+            'regex' => $this->matchesRegex($fieldValue, $compareValue),
         };
     }
 
@@ -187,6 +188,15 @@ class ConditionEvaluator
             $value = $rule['value'] ?? null;
             if (!is_array($value) || count($value) !== 2) {
                 $errors[] = "Rule {$index}: Operator 'between' requires an array with exactly 2 values.";
+            }
+        }
+
+        if ($operator === 'regex') {
+            $value = $rule['value'] ?? null;
+            if (!is_string($value) || $value === '') {
+                $errors[] = "Rule {$index}: Operator 'regex' requires a non-empty string pattern.";
+            } elseif (@preg_match('/'.str_replace('/', '\\/', $value).'/u', '') === false) {
+                $errors[] = "Rule {$index}: Invalid regex pattern: '{$value}'.";
             }
         }
 
@@ -311,7 +321,32 @@ class ConditionEvaluator
             return false;
         }
 
-        // Suppress errors from invalid regex patterns
-        return @preg_match("/{$pattern}/", $fieldValue) === 1;
+        if ($pattern === '') {
+            return false;
+        }
+
+        // Validate the regex pattern before execution
+        $delimiter = '/';
+        $escapedPattern = str_replace($delimiter, '\\'.$delimiter, $pattern);
+        $fullPattern = $delimiter.$escapedPattern.$delimiter.'u';
+
+        // Test pattern validity without executing against input
+        // Use a short subject to detect compilation errors
+        $isValid = @preg_match($fullPattern, '') !== false;
+        if (!$isValid) {
+            return false;
+        }
+
+        // Set a backtrack limit to prevent ReDoS
+        $previousLimit = (int) ini_get('pcre.backtrack_limit');
+        ini_set('pcre.backtrack_limit', '10000');
+
+        try {
+            $result = @preg_match($fullPattern, $fieldValue);
+
+            return $result === 1;
+        } finally {
+            ini_set('pcre.backtrack_limit', (string) $previousLimit);
+        }
     }
 }

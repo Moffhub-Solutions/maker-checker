@@ -44,6 +44,14 @@ class MakerCheckerResource extends Resource
             'pending_users' => $this->resource->getPendingUsers(),
             'requires_user_approvals' => $this->resource->requiresUserApprovals(),
             'is_fully_approved' => $this->resource->hasMetApprovalThreshold(),
+            'notes' => $this->resource->notes->map(fn($note) => [
+                'id' => $note->id,
+                'user_type' => $note->user_type,
+                'user_id' => $note->user_id,
+                'action' => $note->action,
+                'note' => $note->note,
+                'created_at' => $note->created_at?->toIso8601ZuluString(),
+            ])->toArray(),
         ];
     }
 
