@@ -38,6 +38,18 @@ use Moffhub\MakerChecker\Models\MakerCheckerRequest;
 class MakerCheckerRequestController extends Controller
 {
     /**
+     * Resolve the response format based on the "detailed" query parameter.
+     *
+     * When ?detailed=true is passed, the full (BASE) format is returned;
+     * otherwise the SIMPLE format is used.
+     */
+    protected function resolveFormat(Request $request, string $default = MakerCheckerResource::SIMPLE): string
+    {
+        return $request->boolean('detailed')
+            ? MakerCheckerResource::BASE
+            : $default;
+    }
+    /**
      * List all maker-checker requests.
      *
      * @queryParam status string Filter by status (pending, approved, rejected, etc.)
@@ -46,6 +58,7 @@ class MakerCheckerRequestController extends Controller
      * @queryParam subject_type string Filter by subject model class
      * @queryParam maker_id integer Filter by maker ID
      * @queryParam per_page integer Items per page (default: 15)
+     * @queryParam detailed boolean Return full details instead of simple format (default: false)
      */
     public function index(Request $request): JsonResponse
     {
@@ -93,7 +106,7 @@ class MakerCheckerRequestController extends Controller
 
         return response()->json([
             'data' => MakerCheckerResource::collection($requests->items())
-                ->format(MakerCheckerResource::SIMPLE),
+                ->format($this->resolveFormat($request)),
             'meta' => [
                 'current_page' => $requests->currentPage(),
                 'last_page' => $requests->lastPage(),
@@ -105,6 +118,8 @@ class MakerCheckerRequestController extends Controller
 
     /**
      * Get a specific request with full details.
+     *
+     * @queryParam detailed boolean Return full details instead of simple format (default: true)
      */
     public function show(Request $request, int $id): JsonResponse
     {
@@ -125,7 +140,7 @@ class MakerCheckerRequestController extends Controller
         }
 
         return response()->json([
-            'data' => MakerCheckerResource::make($mcRequest)->format(MakerCheckerResource::BASE),
+            'data' => MakerCheckerResource::make($mcRequest)->format($this->resolveFormat($request, MakerCheckerResource::BASE)),
         ]);
     }
 
@@ -155,6 +170,7 @@ class MakerCheckerRequestController extends Controller
      * @bodyParam role string The role under which to approve
      * @bodyParam remarks string Optional approval remarks
      * @bodyParam note string Optional approval note
+     * @queryParam detailed boolean Return full details instead of simple format (default: true)
      */
     public function approve(ApproveRequest $request, int $id): JsonResponse
     {
@@ -172,7 +188,7 @@ class MakerCheckerRequestController extends Controller
 
         return response()->json([
             'message' => 'Request approved successfully',
-            'data' => MakerCheckerResource::make($mcRequest)->format(MakerCheckerResource::BASE),
+            'data' => MakerCheckerResource::make($mcRequest)->format($this->resolveFormat($request, MakerCheckerResource::BASE)),
         ]);
     }
 
@@ -181,6 +197,7 @@ class MakerCheckerRequestController extends Controller
      *
      * @bodyParam remarks string Optional rejection remarks
      * @bodyParam note string Optional rejection note
+     * @queryParam detailed boolean Return full details instead of simple format (default: true)
      */
     public function reject(RejectRequest $request, int $id): JsonResponse
     {
@@ -195,7 +212,7 @@ class MakerCheckerRequestController extends Controller
 
         return response()->json([
             'message' => 'Request rejected successfully',
-            'data' => MakerCheckerResource::make($mcRequest)->format(MakerCheckerResource::BASE),
+            'data' => MakerCheckerResource::make($mcRequest)->format($this->resolveFormat($request, MakerCheckerResource::BASE)),
         ]);
     }
 
@@ -204,6 +221,7 @@ class MakerCheckerRequestController extends Controller
      *
      * @bodyParam remarks string Optional cancellation remarks
      * @bodyParam note string Optional cancellation note
+     * @queryParam detailed boolean Return full details instead of simple format (default: true)
      */
     public function cancel(CancelRequest $request, int $id): JsonResponse
     {
@@ -218,7 +236,7 @@ class MakerCheckerRequestController extends Controller
 
         return response()->json([
             'message' => 'Request cancelled successfully',
-            'data' => MakerCheckerResource::make($mcRequest)->format(MakerCheckerResource::BASE),
+            'data' => MakerCheckerResource::make($mcRequest)->format($this->resolveFormat($request, MakerCheckerResource::BASE)),
         ]);
     }
 
@@ -227,6 +245,7 @@ class MakerCheckerRequestController extends Controller
      *
      * @bodyParam remarks string Optional rollback remarks
      * @bodyParam note string Optional rollback note
+     * @queryParam detailed boolean Return full details instead of simple format (default: true)
      */
     public function rollback(Request $request, int $id): JsonResponse
     {
@@ -241,7 +260,7 @@ class MakerCheckerRequestController extends Controller
 
         return response()->json([
             'message' => 'Request rolled back successfully',
-            'data' => MakerCheckerResource::make($mcRequest)->format(MakerCheckerResource::BASE),
+            'data' => MakerCheckerResource::make($mcRequest)->format($this->resolveFormat($request, MakerCheckerResource::BASE)),
         ]);
     }
 
