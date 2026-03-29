@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Moffhub\MakerChecker\Traits;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Collection;
 use Moffhub\MakerChecker\Facades\MakerChecker;
 use Moffhub\MakerChecker\Models\MakerCheckerRequest;
 
@@ -179,7 +180,7 @@ trait ChecksRequests
 
         // Check for Spatie Permission package
         if (method_exists($this, 'getRoleNames')) {
-            /** @var \Illuminate\Support\Collection $roles */
+            /** @var Collection $roles */
             $roles = $this->getRoleNames();
             if ($roles->isNotEmpty()) {
                 return $roles->first();

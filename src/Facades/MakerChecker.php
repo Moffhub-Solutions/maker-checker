@@ -31,12 +31,14 @@ use Moffhub\MakerChecker\Services\NotificationService;
  * @method static MakerCheckerRequest approve(MakerCheckerRequest $request, Model|null $approver = null, string|null $role = null, string|null $remarks = null)
  * @method static MakerCheckerRequest reject(MakerCheckerRequest $request, Model|null $rejector = null, string|null $remarks = null)
  * @method static MakerCheckerRequest cancel(MakerCheckerRequest $request, Model|null $canceller = null, string|null $remarks = null)
+ * @method static MakerCheckerRequest rollback(MakerCheckerRequest $request, Model|null $actor = null, string|null $remarks = null)
  *
  * Event listeners:
  * @method static void afterInitiating(Closure $callback)
  * @method static void afterApproving(Closure $callback)
  * @method static void afterRejecting(Closure $callback)
  * @method static void afterCancelling(Closure $callback)
+ * @method static void afterRollingBack(Closure $callback)
  * @method static void onFailure(Closure $callback)
  *
  * Notifications:

@@ -5,15 +5,20 @@ declare(strict_types=1);
 namespace Moffhub\MakerChecker\Models;
 
 use Closure;
-use Exception;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
+use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 use Moffhub\MakerChecker\Contracts\MakerCheckerRequestInterface;
 use Moffhub\MakerChecker\Contracts\MakerCheckerUserContract;
+use Moffhub\MakerChecker\Database\Factories\MakerCheckerRequestFactory;
 use Moffhub\MakerChecker\Enums\RequestStatus;
 use Moffhub\MakerChecker\Enums\RequestType;
+use Moffhub\MakerChecker\Exceptions\RequestCannotBeChecked;
 use Moffhub\MakerChecker\Facades\MakerChecker;
 
 /**
@@ -61,6 +66,7 @@ use Moffhub\MakerChecker\Facades\MakerChecker;
  * @property Model $subject
  * @property Model $maker
  * @property Model|null $checker
+ * @property Collection<int, MakerCheckerApprovalNote> $notes
  *
  * @method static static create(array $attributes = [])
  * @method static static firstOrCreate(array $attributes, array $values = [])
@@ -70,7 +76,34 @@ use Moffhub\MakerChecker\Facades\MakerChecker;
  */
 class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
 {
+    /** @use HasFactory<MakerCheckerRequestFactory> */
+    use HasFactory;
+
     protected $guarded = ['id', 'code'];
+
+    public function __construct(array $attributes = [])
+    {
+        parent::__construct($attributes);
+
+        if (config('maker-checker.use_uuid_primary_key', false)) {
+            $this->keyType = 'string';
+            $this->incrementing = false;
+        }
+    }
+
+    protected static function booted(): void
+    {
+        static::creating(function (self $model): void {
+            if (config('maker-checker.use_uuid_primary_key', false) && empty($model->getKey())) {
+                $model->{$model->getKeyName()} = (string) Str::uuid();
+            }
+        });
+    }
+
+    protected static function newFactory(): MakerCheckerRequestFactory
+    {
+        return MakerCheckerRequestFactory::new();
+    }
 
     protected $casts = [
         'payload' => 'array',
@@ -111,9 +144,6 @@ class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
         ];
     }
 
-    /**
-     * @throws Exception
-     */
     public function addApproval(Model $approver, ?string $role = null, ?string $userIdentifier = null): void
     {
         $approvals = $this->approvals ?? [];
@@ -122,7 +152,7 @@ class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
         // Check if this approver has already approved
         foreach ($approvals as $approval) {
             if ($approval['checker_type'] === $approver->getMorphClass() && $approval['checker_id'] === $approver->getKey()) {
-                throw new Exception('This approver has already approved the request.');
+                throw RequestCannotBeChecked::create('This approver has already approved the request.');
             }
         }
 
@@ -409,6 +439,16 @@ class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
     }
 
     /**
+     * Get the approval notes for this request.
+     *
+     * @return HasMany<MakerCheckerApprovalNote, $this>
+     */
+    public function notes(): HasMany
+    {
+        return $this->hasMany(MakerCheckerApprovalNote::class, 'request_id');
+    }
+
+    /**
      * @return MorphTo<Model, $this>
      */
     public function subject(): MorphTo
@@ -607,5 +647,24 @@ class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
         MakerChecker::cancel($this, $canceller, $remarks);
 
         return $this;
+    }
+
+    /**
+     * Rollback this approved request.
+     *
+     * If no actor is provided, the authenticated user is used.
+     *
+     * @return $this
+     */
+    public function rollback(?Model $actor = null, ?string $remarks = null): static
+    {
+        MakerChecker::rollback($this, $actor, $remarks);
+
+        return $this;
+    }
+
+    public function isRolledBack(): bool
+    {
+        return $this->isOfStatus(RequestStatus::ROLLED_BACK);
     }
 }

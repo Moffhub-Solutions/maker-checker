@@ -14,6 +14,7 @@ enum RequestStatus: string
     case PENDING = 'pending';
     case PROCESSING = 'processing';
     case REJECTED = 'rejected';
+    case ROLLED_BACK = 'rolled_back';
 
     /**
      * Get all statuses that represent a finalized/terminal state.
@@ -22,7 +23,7 @@ enum RequestStatus: string
      */
     public static function getFinalizedStatuses(): array
     {
-        return [self::APPROVED, self::REJECTED, self::EXPIRED, self::FAILED, self::CANCELLED];
+        return [self::APPROVED, self::REJECTED, self::EXPIRED, self::FAILED, self::CANCELLED, self::ROLLED_BACK];
     }
 
     /**
@@ -62,6 +63,7 @@ enum RequestStatus: string
             self::PENDING => 'Pending',
             self::PROCESSING => 'Processing',
             self::REJECTED => 'Rejected',
+            self::ROLLED_BACK => 'Rolled Back',
         };
     }
 }

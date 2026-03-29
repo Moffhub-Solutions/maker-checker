@@ -3,8 +3,28 @@
 declare(strict_types=1);
 
 use Moffhub\MakerChecker\Models\MakerCheckerRequest;
+use Moffhub\MakerChecker\Notifications\PendingApprovalNotification;
+use Moffhub\MakerChecker\Notifications\RequestApprovedNotification;
+use Moffhub\MakerChecker\Notifications\RequestRejectedNotification;
 
 return [
+    /*
+    |--------------------------------------------------------------------------
+    | UUID Primary Key
+    |--------------------------------------------------------------------------
+    |
+    | When set to true, the MakerCheckerRequest model will use a UUID string
+    | as its primary key instead of an auto-incrementing integer. This sets
+    | $keyType = 'string' and $incrementing = false on the model.
+    |
+    | NOTE: This is a setup-time decision. If you change this after running
+    | migrations, you will need to create a new migration to alter the `id`
+    | column from bigIncrements to uuid (or vice versa). The existing `code`
+    | column already stores a UUID regardless of this setting.
+    |
+    */
+    'use_uuid_primary_key' => false,
+
     /*
     |--------------------------------------------------------------------------
     | Request Uniqueness
@@ -284,6 +304,7 @@ return [
         'enabled' => env('MAKER_CHECKER_ROUTES_ENABLED', true),
         'prefix' => env('MAKER_CHECKER_ROUTES_PREFIX', 'api'),
         'middleware' => ['api'],
+        'rate_limit' => env('MAKER_CHECKER_RATE_LIMIT', 60),
     ],
 
     /*
@@ -336,9 +357,29 @@ return [
         'action_url' => null, // e.g., 'https://app.example.com/approvals/{code}'
 
         // Custom notification classes (optional)
-        'pending_notification' => \Moffhub\MakerChecker\Notifications\PendingApprovalNotification::class,
-        'approved_notification' => \Moffhub\MakerChecker\Notifications\RequestApprovedNotification::class,
-        'rejected_notification' => \Moffhub\MakerChecker\Notifications\RequestRejectedNotification::class,
+        'pending_notification' => PendingApprovalNotification::class,
+        'approved_notification' => RequestApprovedNotification::class,
+        'rejected_notification' => RequestRejectedNotification::class,
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Audit Logging
+    |--------------------------------------------------------------------------
+    |
+    | Configure audit logging for maker-checker actions.
+    |
+    | - enabled: Set to true to enable audit logging (default: true)
+    | - driver: Storage driver for audit logs ('database' or 'log')
+    | - table_name: Database table name when using the 'database' driver
+    | - log_channel: Laravel log channel when using the 'log' driver (null = default)
+    |
+    */
+    'audit' => [
+        'enabled' => env('MAKER_CHECKER_AUDIT_ENABLED', true),
+        'driver' => env('MAKER_CHECKER_AUDIT_DRIVER', 'database'),
+        'table_name' => 'maker_checker_audit_logs',
+        'log_channel' => null,
     ],
 
     /*
@@ -372,5 +413,38 @@ return [
         'before_rejection' => [],
         'after_rejection' => [],
         'on_failure' => [],
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Approval Reminders
+    |--------------------------------------------------------------------------
+    |
+    | Configure automatic reminders for pending approval requests.
+    | Run `php artisan maker-checker:send-reminders` via scheduler.
+    |
+    | - enabled: Set to true to enable reminders
+    | - after_hours: Hours after which to send a reminder (default: 24)
+    |
+    */
+    'reminders' => [
+        'enabled' => env('MAKER_CHECKER_REMINDERS_ENABLED', false),
+        'after_hours' => env('MAKER_CHECKER_REMINDERS_AFTER_HOURS', 24),
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Approval Escalation
+    |--------------------------------------------------------------------------
+    |
+    | Configure escalation for long-overdue pending requests.
+    |
+    | - after_hours: Hours after which to escalate (default: 48)
+    | - notify: Array of email addresses to notify on escalation
+    |
+    */
+    'escalation' => [
+        'after_hours' => env('MAKER_CHECKER_ESCALATION_AFTER_HOURS', 48),
+        'notify' => [],
     ],
 ];

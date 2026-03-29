@@ -1,17 +1,50 @@
-# MakerChecker
+# Maker-Checker for Laravel
 
-A Laravel package for implementing the Maker-Checker (Four Eyes) approval workflow pattern. This pattern ensures that critical operations require approval from one or more reviewers before execution.
+[![Latest Version on Packagist](https://img.shields.io/packagist/v/moffhub/maker-checker.svg?style=flat-square)](https://packagist.org/packages/moffhub/maker-checker)
+[![Total Downloads](https://img.shields.io/packagist/dt/moffhub/maker-checker.svg?style=flat-square)](https://packagist.org/packages/moffhub/maker-checker)
+[![License](https://img.shields.io/packagist/l/moffhub/maker-checker.svg?style=flat-square)](https://packagist.org/packages/moffhub/maker-checker)
+[![PHP Version](https://img.shields.io/packagist/php-v/moffhub/maker-checker.svg?style=flat-square)](https://packagist.org/packages/moffhub/maker-checker)
+
+The most feature-complete **maker-checker (four-eyes principle)** approval workflow package for Laravel. Add multi-level approval requirements to any Eloquent model with a single trait, or use the full-featured API for complex enterprise workflows.
+
+Unlike simpler approval packages, this supports **multi-role approvals**, a **conditional rules engine**, **approval delegation**, **bulk operations**, **audit trail with export**, **reminders & escalation**, and **auto-intercept via Eloquent model events** -- all out of the box.
+
+## Why This Package?
+
+| Feature | moffhub/maker-checker | Others |
+|---------|:---------------------:|:------:|
+| Auto-intercept via trait | ✅ | Some |
+| Multi-role approvals (2 admins + 1 manager) | ✅ | Rare |
+| User-specific approvals | ✅ | ❌ |
+| Conditional rules engine (if amount > 50K...) | ✅ | ❌ |
+| Database-driven config (change rules at runtime) | ✅ | ❌ |
+| Execute arbitrary actions (not just CRUD) | ✅ | ❌ |
+| Approval delegation with expiry | ✅ | ❌ |
+| Bulk approve endpoint | ✅ | ❌ |
+| Reminders & escalation | ✅ | ❌ |
+| Audit trail + CSV/JSON export | ✅ | Rare |
+| Race condition safe (pessimistic locking) | ✅ | ❌ |
+| REST API included | ✅ | ❌ |
+| 360+ tests | ✅ | Varies |
 
 ## Features
 
+- **Auto-intercept** - Add `RequiresApproval` trait to any model; create/update/delete are intercepted automatically
 - **Multi-role approvals** - Require approvals from specific roles (e.g., 2 admins + 1 manager)
-- **CRUD operations** - Built-in support for Create, Update, Delete, and custom Execute operations
-- **Flexible configuration** - Configure via file, database, or model interfaces
+- **User-specific approvals** - Require specific people to approve by email or ID
+- **Conditional rules engine** - Different approval rules based on payload (e.g., amount > 50,000 needs extra approval)
+- **CRUD + Execute** - Built-in support for Create, Update, Delete, and custom Execute operations
+- **Flexible configuration** - Configure via file, database, model interfaces, or runtime API
 - **Multi-tenancy support** - Team/company scoping for requests
-- **API ready** - RESTful API endpoints for managing requests
+- **API ready** - RESTful API endpoints for managing requests, configs, delegations, and audits
+- **Bulk operations** - Approve multiple requests in one call
+- **Delegation** - Delegate approval authority to another user with optional expiry
 - **Hooks & callbacks** - Execute custom logic before/after approval or rejection
+- **Reminders & escalation** - Auto-remind approvers; escalate after configurable delay
 - **Request expiration** - Auto-expire pending requests after a configurable time
-- **Audit trail** - Track who made and approved each request
+- **Audit trail** - Full audit log with CSV/JSON export endpoint
+- **Notifications** - Built-in email/database notifications with sequential approval support
+- **Race condition safe** - Pessimistic locking prevents double-approval bugs
 
 ## Installation
 
@@ -1131,6 +1164,427 @@ MakerChecker::callbacks()
 | `after_rejection` | After request is rejected |
 | `on_failure` | When request execution fails |
 
+## Rate Limiting
+
+All package API routes are rate-limited by default. Configure the limit in your config:
+
+```php
+// config/maker-checker.php
+'routes' => [
+    'rate_limit' => env('MAKER_CHECKER_RATE_LIMIT', 60), // requests per minute
+],
+```
+
+Rate limiting is keyed by the authenticated user's ID or by IP address for unauthenticated requests. Set to `0` or `null` to disable rate limiting.
+
+The rate limiter is registered under the name `maker-checker`, so you can reference it in your own routes if needed:
+
+```php
+Route::middleware('throttle:maker-checker')->group(function () {
+    // Your custom maker-checker routes
+});
+```
+
+## Audit Logging
+
+The package automatically logs all approval actions (approve, reject, cancel, fail) with full context.
+
+### Configuration
+
+```php
+// config/maker-checker.php
+'audit' => [
+    'enabled' => env('MAKER_CHECKER_AUDIT_ENABLED', true),
+    'driver' => env('MAKER_CHECKER_AUDIT_DRIVER', 'database'),
+    'table_name' => 'maker_checker_audit_logs',
+    'log_channel' => null, // Laravel log channel for 'log' driver
+],
+```
+
+### Drivers
+
+- **`database`** (default): Writes audit entries to the `maker_checker_audit_logs` table. Best for querying and reporting.
+- **`log`**: Writes audit entries to a Laravel log channel. Best for high-throughput systems where you want to offload to external log aggregation (ELK, Datadog, etc.).
+
+### Logged Data
+
+Each audit entry includes:
+- `request_id` - The maker-checker request ID
+- `actor_type` / `actor_id` - Who performed the action (morph relationship)
+- `action` - The action performed (approved, rejected, cancelled, partially_approved, failed)
+- `previous_status` - The request status before the action
+- `new_status` - The request status after the action
+- `ip_address` - The IP address of the actor
+- `metadata` - Additional context (e.g., exception messages for failures)
+
+## Conditional Configuration
+
+When using the database config driver, you can define conditions that determine which configuration applies based on the request payload. This allows different approval requirements for different scenarios.
+
+### Supported Operators
+
+| Operator | Description | Example Value |
+|----------|-------------|---------------|
+| `=` | Equal to | `50000` |
+| `!=` | Not equal to | `"draft"` |
+| `>` | Greater than | `10000` |
+| `>=` | Greater than or equal | `5000` |
+| `<` | Less than | `100` |
+| `<=` | Less than or equal | `50` |
+| `in` | Value in array | `["US", "EU", "UK"]` |
+| `not_in` | Value not in array | `["blocked", "suspended"]` |
+| `contains` | String contains | `"urgent"` |
+| `starts_with` | String starts with | `"VIP-"` |
+| `ends_with` | String ends with | `"@company.com"` |
+| `is_null` | Value is null | _(no value needed)_ |
+| `is_not_null` | Value is not null | _(no value needed)_ |
+| `between` | Value between two numbers | `[1000, 50000]` |
+| `regex` | Matches regex pattern | `"^[A-Z]{3}\\d{4}$"` |
+
+### Condition Examples
+
+**Simple condition - high-value transfers require extra approval:**
+
+```json
+{
+    "mode": "all",
+    "rules": [
+        {"field": "amount", "operator": ">=", "value": 50000}
+    ]
+}
+```
+
+**Multiple conditions (AND) - large international transfers:**
+
+```json
+{
+    "mode": "all",
+    "rules": [
+        {"field": "amount", "operator": ">=", "value": 10000},
+        {"field": "currency", "operator": "!=", "value": "USD"},
+        {"field": "destination_country", "operator": "not_in", "value": ["US", "CA"]}
+    ]
+}
+```
+
+**Any condition (OR) - sensitive operations:**
+
+```json
+{
+    "mode": "any",
+    "rules": [
+        {"field": "amount", "operator": ">=", "value": 100000},
+        {"field": "category", "operator": "=", "value": "executive"},
+        {"field": "department", "operator": "in", "value": ["finance", "legal"]}
+    ]
+}
+```
+
+**Nested groups - complex business rules:**
+
+```json
+{
+    "mode": "all",
+    "rules": [
+        {"field": "status", "operator": "=", "value": "active"}
+    ],
+    "groups": [
+        {
+            "mode": "any",
+            "rules": [
+                {"field": "amount", "operator": ">=", "value": 50000},
+                {"field": "priority", "operator": "=", "value": "urgent"}
+            ]
+        }
+    ]
+}
+```
+
+**Using between for range checks:**
+
+```json
+{
+    "mode": "all",
+    "rules": [
+        {"field": "amount", "operator": "between", "value": [10000, 49999]},
+        {"field": "region", "operator": "in", "value": ["EMEA", "APAC"]}
+    ]
+}
+```
+
+### Testing Conditions
+
+Use the test endpoint to verify which config matches a payload:
+
+```http
+POST /api/maker-checker/configs/test-conditions
+Content-Type: application/json
+
+{
+    "configurable_type": "App\\Models\\Transfer",
+    "action": "create",
+    "payload": {
+        "amount": 75000,
+        "currency": "EUR",
+        "destination_country": "DE"
+    }
+}
+```
+
+## Team Scoping
+
+The package supports multi-tenant setups where requests and configurations are scoped to teams/companies.
+
+### Setup
+
+1. **Implement the User Contract** with team support:
+
+```php
+class User extends Authenticatable implements MakerCheckerUserContract
+{
+    public function getMakerCheckerTeamId(): ?int
+    {
+        return $this->team_id;
+    }
+
+    // ... other contract methods
+}
+```
+
+2. **Pass team ID when creating requests:**
+
+```php
+MakerChecker::request()
+    ->toCreate(Invoice::class, $data, teamId: auth()->user()->team_id)
+    ->madeBy(auth()->user())
+    ->save();
+```
+
+Or use the builder methods:
+
+```php
+MakerChecker::request()
+    ->toCreate(Invoice::class, $data, requiredApprovals: [], teamId: $teamId)
+    ->madeBy(auth()->user())
+    ->save();
+```
+
+3. **Enable team scoping for notifications:**
+
+```php
+// config/maker-checker.php
+'notifications' => [
+    'team_scoping' => true,
+    'team_attribute' => 'team_id', // attribute on user model
+],
+```
+
+4. **Create team-scoped configs** (database driver):
+
+```php
+MakerCheckerConfig::create([
+    'configurable_type' => Invoice::class,
+    'action' => 'create',
+    'approvals' => ['manager' => 1],
+    'team_id' => 42, // Applies only to team 42
+    'is_active' => true,
+]);
+```
+
+### Visibility
+
+Requests are automatically filtered by team when using `scopeVisibleTo`:
+
+```php
+// Users only see requests from their team
+$requests = MakerCheckerRequest::visibleTo(auth()->user())->get();
+```
+
+Users with the `view_any_permission` bypass team filtering and see all requests.
+
+## Custom ApproverResolver
+
+The default `ApproverResolver` finds approvers by querying a `role` attribute on the user model. For more complex scenarios, implement your own resolver.
+
+### Example: Spatie Permissions Integration
+
+```php
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Collection;
+use Moffhub\MakerChecker\Contracts\ApproverResolver;
+use Moffhub\MakerChecker\Models\MakerCheckerRequest;
+
+class SpatieApproverResolver implements ApproverResolver
+{
+    public function getApproversForRole(MakerCheckerRequest $request, string $role): Collection
+    {
+        return User::permission("maker-checker.approve.{$role}")
+            ->when($request->team_id, fn($q) => $q->where('team_id', $request->team_id))
+            ->where('id', '!=', $request->maker_id)
+            ->get();
+    }
+
+    public function getAllApprovers(MakerCheckerRequest $request): Collection
+    {
+        $requiredApprovals = $request->required_approvals ?? [];
+        $roles = $requiredApprovals['roles'] ?? $requiredApprovals;
+        $users = $requiredApprovals['users'] ?? [];
+
+        $approvers = collect();
+
+        foreach (array_keys($roles) as $role) {
+            $approvers = $approvers->merge($this->getApproversForRole($request, $role));
+        }
+
+        if (!empty($users)) {
+            $approvers = $approvers->merge($this->getApproversByIdentifier($request, $users));
+        }
+
+        return $approvers->unique('id');
+    }
+
+    public function getApproversByIdentifier(MakerCheckerRequest $request, array $userIdentifiers): Collection
+    {
+        return User::where(function ($query) use ($userIdentifiers) {
+            $query->whereIn('email', $userIdentifiers)
+                ->orWhereIn('id', $userIdentifiers);
+        })->get();
+    }
+
+    public function getApproverByIdentifier(string $identifier): ?Model
+    {
+        return User::where('email', $identifier)
+            ->orWhere('id', $identifier)
+            ->first();
+    }
+
+    public function userExists(string $identifier): bool
+    {
+        return $this->getApproverByIdentifier($identifier) !== null;
+    }
+
+    public function validateUsersExist(array $userIdentifiers): array
+    {
+        return array_filter($userIdentifiers, fn($id) => !$this->userExists($id));
+    }
+}
+```
+
+Register it in your `AppServiceProvider`:
+
+```php
+$this->app->bind(ApproverResolver::class, SpatieApproverResolver::class);
+```
+
+## Custom ExecutableRequest
+
+Create custom executable actions for complex operations that need approval:
+
+```php
+use Moffhub\MakerChecker\Contracts\ExecutableRequest;
+use Moffhub\MakerChecker\Models\MakerCheckerRequest;
+
+class BulkUserImport extends ExecutableRequest
+{
+    /**
+     * Execute the approved action.
+     */
+    public function execute(MakerCheckerRequest $request): void
+    {
+        $payload = $request->payload;
+
+        foreach ($payload['users'] as $userData) {
+            User::create([
+                'name' => $userData['name'],
+                'email' => $userData['email'],
+                'role' => $userData['role'] ?? 'user',
+                'team_id' => $request->team_id,
+            ]);
+        }
+    }
+
+    /**
+     * Fields used to determine request uniqueness.
+     * Prevents duplicate import requests with the same file hash.
+     */
+    public function uniqueBy(): array
+    {
+        return ['file_hash'];
+    }
+
+    /**
+     * Runs before the request is approved.
+     * Use for pre-flight validation.
+     */
+    public function beforeApproval(MakerCheckerRequest $request): void
+    {
+        $payload = $request->payload;
+
+        // Verify no duplicate emails in the import
+        $emails = array_column($payload['users'], 'email');
+        $existing = User::whereIn('email', $emails)->pluck('email');
+
+        if ($existing->isNotEmpty()) {
+            throw new \RuntimeException(
+                'Import contains existing emails: ' . $existing->implode(', ')
+            );
+        }
+    }
+
+    /**
+     * Runs after successful approval and execution.
+     */
+    public function afterApproval(MakerCheckerRequest $request): void
+    {
+        $count = count($request->payload['users'] ?? []);
+        Log::info("Bulk import completed: {$count} users imported", [
+            'request_id' => $request->id,
+            'team_id' => $request->team_id,
+        ]);
+    }
+
+    /**
+     * Runs before the request is rejected.
+     */
+    public function beforeRejection(MakerCheckerRequest $request): void
+    {
+        // Optional: cleanup temporary files
+    }
+
+    /**
+     * Runs after the request is rejected.
+     */
+    public function afterRejection(MakerCheckerRequest $request): void
+    {
+        Notification::send($request->maker, new ImportRejectedNotification($request));
+    }
+
+    /**
+     * Runs when execution fails.
+     */
+    public function onFailure(MakerCheckerRequest $request): void
+    {
+        Log::error('Bulk import failed', [
+            'request_id' => $request->id,
+            'exception' => $request->exception,
+        ]);
+    }
+}
+```
+
+Use it:
+
+```php
+MakerChecker::request()
+    ->toExecute(BulkUserImport::class, [
+        'file_hash' => md5_file($uploadedFile->path()),
+        'users' => $parsedUsers,
+    ])
+    ->withApprovals(['hr_manager' => 1, 'admin' => 1])
+    ->madeBy(auth()->user())
+    ->save();
+```
+
 ## Testing
 
 ```bash
@@ -1158,11 +1612,127 @@ composer check-code  # Runs lint, phpstan, and tests
 | `config_driver` | `file` | `file` or `database` |
 | `cache_config` | `true` | Cache database configs |
 | `config_cache_ttl` | `3600` | Cache TTL in seconds |
+| `routes.rate_limit` | `60` | Rate limit per minute (0 to disable) |
 | `notifications.enabled` | `false` | Enable automatic notifications |
 | `notifications.channels` | `['mail', 'database']` | Notification delivery channels |
 | `notifications.notify_maker` | `true` | Notify maker on approval/rejection |
 | `notifications.sequential` | `false` | Notify roles one at a time |
 | `notifications.role_attribute` | `role` | User model attribute for role |
+| `audit.enabled` | `true` | Enable audit logging |
+| `audit.driver` | `database` | Audit storage: `database` or `log` |
+| `audit.table_name` | `maker_checker_audit_logs` | Audit log table name |
+| `audit.log_channel` | `null` | Laravel log channel for `log` driver |
+
+## Troubleshooting
+
+### "No authenticated user found" error
+
+This error occurs when using the convenience methods (`MakerChecker::create()`, `MakerChecker::approve()`) without an authenticated user. Solutions:
+
+- Ensure the user is authenticated before calling these methods
+- Use the request builder with `->madeBy($user)` to explicitly pass a user
+- For console commands or jobs, use the builder pattern instead of convenience methods
+
+### "Request checker cannot be the same as the maker"
+
+By default, the same user cannot both create and approve a request. To allow this for specific users (e.g., admins in development):
+
+```php
+// .env
+MAKER_CHECKER_WHITELISTED_EMAILS=admin@example.com,super@example.com
+```
+
+### "The request model passed must be an instance of..."
+
+This happens when:
+- The `request_model` config points to a class that doesn't extend `MakerCheckerRequest`
+- The config hasn't been published or is outdated
+
+Fix: Ensure your custom model extends `MakerCheckerRequest`:
+
+```php
+class CustomRequest extends \Moffhub\MakerChecker\Models\MakerCheckerRequest
+{
+    // Your customizations
+}
+```
+
+### Duplicate request exceptions
+
+When `ensure_requests_are_unique` is `true`, creating a request with the same payload as an existing pending request throws a `DuplicateRequestException`. Solutions:
+
+- Use `uniqueBy()` on the builder to specify which fields determine uniqueness
+- Set `ensure_requests_are_unique` to `false` if duplicates are acceptable
+- Approve or cancel existing pending requests first
+
+### Notifications not sending
+
+1. Ensure notifications are enabled: `'notifications.enabled' => true`
+2. Verify `user_model` is set or `auth.providers.users.model` is configured
+3. Check that your user model uses Laravel's `Notifiable` trait
+4. Verify the `ApproverResolver` returns users for the required roles
+5. Check your notification channels configuration
+
+### Config validation errors on boot
+
+The package validates configuration when the application boots (except during tests). Common issues:
+
+- `default_approval_count` must be >= 1
+- `config_driver` must be `file` or `database`
+- `request_model` must be a class extending `MakerCheckerRequest`
+- `whitelisted_models.maker` and `whitelisted_models.checker` must be arrays
+
+### Database config not applying
+
+When using the `database` config driver:
+1. Ensure the config driver is set: `'config_driver' => 'database'`
+2. Run migrations: `php artisan migrate`
+3. Check configs are `is_active: true`
+4. Clear config cache if changes aren't reflected: `php artisan cache:clear`
+5. Verify the `team_id` matches (team-specific configs only apply to that team)
+
+### Rate limiting too aggressive
+
+Adjust the rate limit per minute:
+
+```php
+// config/maker-checker.php
+'routes' => [
+    'rate_limit' => 120, // Increase to 120 per minute
+],
+```
+
+Or disable rate limiting entirely:
+
+```php
+'routes' => [
+    'rate_limit' => 0, // Disabled
+],
+```
+
+## Known Limitations
+
+1. **No built-in queue support for fulfillment**: When a request is approved, the underlying operation (create/update/delete/execute) runs synchronously within the approval request. For long-running operations, implement your own queue dispatch inside an `ExecutableRequest`.
+
+2. **JSON payload comparison**: Duplicate request checking uses JSON field comparisons (`payload->field`), which may behave differently across database engines (MySQL vs PostgreSQL vs SQLite).
+
+3. **Single approval per user**: A user can only approve a request once. They cannot approve under multiple roles for the same request.
+
+4. **No partial rollback**: If fulfillment fails after approval, the request is marked as `failed` but any partial side effects from hooks (`beforeApproval`) are not rolled back.
+
+5. **Config driver is global**: You cannot use different config drivers for different models. The `config_driver` setting applies to all models.
+
+6. **Morph map dependency**: The package uses polymorphic relationships for maker/checker/subject. If you change your morph map after requests are created, existing requests may break.
+
+7. **No built-in approval deadlines**: While requests can expire, there is no built-in deadline per approval step in a multi-role chain. All roles have the same expiration window.
+
+## Performance
+
+For high-traffic production deployments, see [docs/PERFORMANCE.md](docs/PERFORMANCE.md) for:
+- Recommended database indexes
+- Query optimization tips
+- Config caching recommendations
+- Approval chain resolution at scale
 
 ## License
 

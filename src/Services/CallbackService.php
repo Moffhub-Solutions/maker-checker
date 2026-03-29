@@ -6,6 +6,7 @@ namespace Moffhub\MakerChecker\Services;
 
 use Closure;
 use Illuminate\Foundation\Application;
+use Moffhub\MakerChecker\Contracts\CallbackServiceInterface;
 use Moffhub\MakerChecker\Contracts\RequestCallback;
 use Moffhub\MakerChecker\Models\MakerCheckerRequest;
 
@@ -16,7 +17,7 @@ use Moffhub\MakerChecker\Models\MakerCheckerRequest;
  * 1. Via config file (class names implementing RequestCallback)
  * 2. Programmatically via register methods
  */
-class CallbackService
+class CallbackService implements CallbackServiceInterface
 {
     /**
      * @var array<string, array<Closure>>

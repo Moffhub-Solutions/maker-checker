@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Moffhub\MakerChecker\Tests\Unit;
 
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Notification;
 use Moffhub\MakerChecker\Contracts\ApproverResolver;
 use Moffhub\MakerChecker\Facades\MakerChecker;
+use Moffhub\MakerChecker\Models\MakerCheckerRequest;
 use Moffhub\MakerChecker\Notifications\PendingApprovalNotification;
 use Moffhub\MakerChecker\Notifications\RequestApprovedNotification;
 use Moffhub\MakerChecker\Notifications\RequestRejectedNotification;
@@ -222,10 +225,13 @@ class NotificationServiceTest extends BaseTestCase
             ->save();
 
         // Editor approves
-        MakerChecker::approve($request, $editor, 'editor');
+        $request = MakerChecker::approve($request, $editor, 'editor');
 
         // Reset notification fake to only track next approvers
         Notification::fake();
+
+        // Refresh request to get updated approvals state
+        $request->refresh();
 
         // Manually notify next approvers
         MakerChecker::notifyNextApprovers($request);
@@ -265,23 +271,23 @@ class NotificationServiceTest extends BaseTestCase
         // Create a custom resolver that returns specific users
         $customResolver = new class implements ApproverResolver
         {
-            public function getApproversForRole(\Moffhub\MakerChecker\Models\MakerCheckerRequest $request, string $role): \Illuminate\Support\Collection
+            public function getApproversForRole(MakerCheckerRequest $request, string $role): Collection
             {
                 // Only return users with email containing 'approver'
                 return User::where('email', 'like', '%approver%')->get();
             }
 
-            public function getAllApprovers(\Moffhub\MakerChecker\Models\MakerCheckerRequest $request): \Illuminate\Support\Collection
+            public function getAllApprovers(MakerCheckerRequest $request): Collection
             {
                 return $this->getApproversForRole($request, 'any');
             }
 
-            public function getApproversByIdentifier(\Moffhub\MakerChecker\Models\MakerCheckerRequest $request, array $userIdentifiers): \Illuminate\Support\Collection
+            public function getApproversByIdentifier(MakerCheckerRequest $request, array $userIdentifiers): Collection
             {
                 return User::whereIn('email', $userIdentifiers)->orWhereIn('id', $userIdentifiers)->get();
             }
 
-            public function getApproverByIdentifier(string $identifier): ?\Illuminate\Database\Eloquent\Model
+            public function getApproverByIdentifier(string $identifier): ?Model
             {
                 return User::where('email', $identifier)->orWhere('id', $identifier)->first();
             }

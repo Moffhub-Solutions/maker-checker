@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Moffhub\MakerChecker\Traits;
 
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Moffhub\MakerChecker\ConfigResolver;
 use Moffhub\MakerChecker\Enums\RequestType;
@@ -485,9 +486,9 @@ trait RequiresApproval
     /**
      * Get pending approval requests for this model.
      *
-     * @return \Illuminate\Database\Eloquent\Collection<int, MakerCheckerRequest>
+     * @return Collection<int, MakerCheckerRequest>
      */
-    public function getPendingApprovals(?RequestType $action = null): \Illuminate\Database\Eloquent\Collection
+    public function getPendingApprovals(?RequestType $action = null): Collection
     {
         $query = MakerCheckerRequest::query()
             ->where('subject_type', static::class)

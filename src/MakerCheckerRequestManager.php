@@ -6,10 +6,11 @@ namespace Moffhub\MakerChecker;
 
 use Carbon\Carbon;
 use Closure;
-use Exception;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Facades\DB;
+use Moffhub\MakerChecker\Contracts\ApproverResolver;
+use Moffhub\MakerChecker\Contracts\CallbackServiceInterface;
 use Moffhub\MakerChecker\Contracts\MakerCheckerUserContract;
 use Moffhub\MakerChecker\Enums\Hooks;
 use Moffhub\MakerChecker\Enums\RequestStatus;
@@ -19,13 +20,17 @@ use Moffhub\MakerChecker\Events\RequestCancelled;
 use Moffhub\MakerChecker\Events\RequestFailed;
 use Moffhub\MakerChecker\Events\RequestInitiated;
 use Moffhub\MakerChecker\Events\RequestRejected;
+use Moffhub\MakerChecker\Events\RequestRolledBack;
+use Moffhub\MakerChecker\Exceptions\FulfillmentException;
 use Moffhub\MakerChecker\Exceptions\InvalidRequestTypePassed;
 use Moffhub\MakerChecker\Exceptions\ModelCannotCheckRequests;
 use Moffhub\MakerChecker\Exceptions\RequestCannotBeCancelled;
 use Moffhub\MakerChecker\Exceptions\RequestCannotBeChecked;
+use Moffhub\MakerChecker\Exceptions\RequestCannotBeRolledBack;
 use Moffhub\MakerChecker\Exceptions\RequestCouldNotBeProcessed;
+use Moffhub\MakerChecker\Exceptions\UnauthorizedApproverException;
 use Moffhub\MakerChecker\Models\MakerCheckerRequest;
-use Moffhub\MakerChecker\Services\CallbackService;
+use Moffhub\MakerChecker\Services\AuditService;
 use Moffhub\MakerChecker\Services\NotificationService;
 use Throwable;
 
@@ -201,9 +206,9 @@ class MakerCheckerRequestManager
     /**
      * Get the callback service for programmatic callback registration.
      */
-    public function callbacks(): CallbackService
+    public function callbacks(): CallbackServiceInterface
     {
-        return $this->app->make(CallbackService::class);
+        return $this->app->make(CallbackServiceInterface::class);
     }
 
     /**
@@ -240,7 +245,21 @@ class MakerCheckerRequestManager
         $approver = $approver ?? $this->getAuthenticatedUser();
         $this->assertRequestCanBeChecked($request, $approver);
 
-        return DB::transaction(function () use ($request, $approver, $role, $remarks): \Moffhub\MakerChecker\Models\MakerCheckerRequest {
+        return DB::transaction(function () use ($request, $approver, $role, $remarks): MakerCheckerRequest {
+            // Re-fetch with pessimistic lock to prevent race conditions
+            $request = MakerCheckerRequest::query()
+                ->lockForUpdate()
+                ->findOrFail($request->getKey());
+
+            // Re-check actionable status inside the lock
+            if (!$request->isActionable()) {
+                throw RequestCannotBeChecked::create(
+                    "Request is in '{$request->status->value}' status. Only pending or partially approved requests can be approved or rejected."
+                );
+            }
+
+            $previousStatus = $request->status->value;
+
             try {
                 // Add approval, handling the case where no role is provided
                 $request->addApproval($approver, $role);
@@ -262,14 +281,20 @@ class MakerCheckerRequestManager
                     // Execute post-approval hook
                     $this->executeCallbackHook($request, Hooks::POST_APPROVAL);
 
+                    // Audit log
+                    $this->auditLog('approved', $request, $approver, $previousStatus, $request->status->value);
+
                     // Dispatch the approval event
-                    $this->app['events']->dispatch(new RequestApproved($request));
+                    $this->app['events']->dispatch(RequestApproved::fromRequest($request, $approver));
                 } else {
                     // If some approvals are done but not all, mark as partially approved
                     $request->update([
                         'status' => RequestStatus::PARTIALLY_APPROVED,
                         'remarks' => $remarks,
                     ]);
+
+                    // Audit log
+                    $this->auditLog('partially_approved', $request, $approver, $previousStatus, $request->status->value);
                 }
 
                 return $request;
@@ -277,6 +302,11 @@ class MakerCheckerRequestManager
                 $request->update([
                     'status' => RequestStatus::FAILED,
                     'exception' => (string) $e,
+                ]);
+
+                // Audit log
+                $this->auditLog('failed', $request, $approver, $previousStatus, RequestStatus::FAILED->value, [
+                    'exception' => $e->getMessage(),
                 ]);
 
                 // Execute failure hook
@@ -302,7 +332,9 @@ class MakerCheckerRequestManager
         $rejector = $rejector ?? $this->getAuthenticatedUser();
         $this->assertRequestCanBeChecked($request, $rejector);
 
-        return DB::transaction(function () use ($request, $rejector, $remarks): \Moffhub\MakerChecker\Models\MakerCheckerRequest {
+        return DB::transaction(function () use ($request, $rejector, $remarks): MakerCheckerRequest {
+            $previousStatus = $request->status->value;
+
             try {
                 // Execute pre-rejection hook
                 $this->executeCallbackHook($request, Hooks::PRE_REJECTION);
@@ -318,8 +350,11 @@ class MakerCheckerRequestManager
                 // Execute post-rejection hook
                 $this->executeCallbackHook($request, Hooks::POST_REJECTION);
 
+                // Audit log
+                $this->auditLog('rejected', $request, $rejector, $previousStatus, $request->status->value);
+
                 // Dispatch rejection event
-                $this->app['events']->dispatch(new RequestRejected($request));
+                $this->app['events']->dispatch(RequestRejected::fromRequest($request, $rejector, $remarks));
 
                 return $request;
             } catch (Throwable $e) {
@@ -352,7 +387,9 @@ class MakerCheckerRequestManager
         $canceller = $canceller ?? $this->getAuthenticatedUser();
         $this->assertRequestCanBeCancelled($request, $canceller);
 
-        return DB::transaction(function () use ($request, $canceller, $remarks): \Moffhub\MakerChecker\Models\MakerCheckerRequest {
+        return DB::transaction(function () use ($request, $canceller, $remarks): MakerCheckerRequest {
+            $previousStatus = $request->status->value;
+
             $request->update([
                 'status' => RequestStatus::CANCELLED,
                 'checker_type' => $canceller->getMorphClass(),
@@ -361,10 +398,173 @@ class MakerCheckerRequestManager
                 'remarks' => $remarks,
             ]);
 
-            $this->app['events']->dispatch(new RequestCancelled($request));
+            // Audit log
+            $this->auditLog('cancelled', $request, $canceller, $previousStatus, $request->status->value);
+
+            $this->app['events']->dispatch(RequestCancelled::fromRequest($request, $remarks));
 
             return $request;
         });
+    }
+
+    /**
+     * Rollback an already-approved maker-checker request.
+     *
+     * For CREATE requests, the created model is deleted.
+     * For UPDATE requests, the model is reverted to its original values.
+     * DELETE requests cannot be rolled back.
+     *
+     * Only users with admin role or whitelisted emails can perform rollbacks.
+     */
+    public function rollback(
+        MakerCheckerRequest $request,
+        ?Model $actor = null,
+        ?string $remarks = null,
+    ): MakerCheckerRequest {
+        $actor = $actor ?? $this->getAuthenticatedUser();
+        $this->assertRequestCanBeRolledBack($request, $actor);
+
+        return DB::transaction(function () use ($request, $actor, $remarks): MakerCheckerRequest {
+            $previousStatus = $request->status->value;
+
+            try {
+                $this->reverseFulfillment($request);
+
+                $request->update([
+                    'status' => RequestStatus::ROLLED_BACK,
+                    'checker_type' => $actor->getMorphClass(),
+                    'checker_id' => $actor->getKey(),
+                    'checked_at' => Carbon::now(),
+                    'remarks' => $remarks,
+                ]);
+
+                // Audit log
+                $this->auditLog('rolled_back', $request, $actor, $previousStatus, $request->status->value);
+
+                // Dispatch rollback event
+                $this->app['events']->dispatch(RequestRolledBack::fromRequest($request, $remarks));
+
+                return $request;
+            } catch (RequestCannotBeRolledBack $e) {
+                throw $e;
+            } catch (Throwable $e) {
+                $request->update([
+                    'status' => RequestStatus::FAILED,
+                    'exception' => (string) $e,
+                ]);
+
+                // Audit log
+                $this->auditLog('rollback_failed', $request, $actor, $previousStatus, RequestStatus::FAILED->value, [
+                    'exception' => $e->getMessage(),
+                ]);
+
+                $this->app['events']->dispatch(new RequestFailed($request, $e));
+
+                throw RequestCouldNotBeProcessed::create($e->getMessage(), $e);
+            }
+        });
+    }
+
+    /**
+     * Define a callback to be executed after any request is rolled back.
+     */
+    public function afterRollingBack(Closure $callback): void
+    {
+        $this->app['events']->listen(RequestRolledBack::class, $callback);
+    }
+
+    private function assertRequestCanBeRolledBack(MakerCheckerRequest $request, Model $actor): void
+    {
+        $requestModelClass = MakerCheckerServiceProvider::getRequestModelClass();
+
+        if (!$request instanceof $requestModelClass) {
+            throw RequestCannotBeRolledBack::create("The request model passed must be an instance of $requestModelClass");
+        }
+
+        if (!$request->isOfStatus(RequestStatus::APPROVED)) {
+            throw RequestCannotBeRolledBack::create('Only approved requests can be rolled back.');
+        }
+
+        if ($request->isOfType(RequestType::DELETE)) {
+            throw RequestCannotBeRolledBack::create('Delete requests cannot be rolled back.');
+        }
+
+        // Only whitelisted emails or admin users can rollback
+        $whitelistEmails = $this->getWhitelistEmails();
+        $actorEmail = $this->getUserEmail($actor);
+        $isWhitelisted = $actorEmail && in_array($actorEmail, $whitelistEmails, true);
+
+        if (!$isWhitelisted && !$this->userIsAdmin($actor)) {
+            throw RequestCannotBeRolledBack::create('You are not authorized to rollback this request.');
+        }
+    }
+
+    /**
+     * Check if a user has admin privileges for rollback authorization.
+     */
+    private function userIsAdmin(Model $user): bool
+    {
+        if ($user instanceof MakerCheckerUserContract) {
+            return $user->hasMakerCheckerPermission('maker-checker.rollback');
+        }
+
+        if (method_exists($user, 'hasMakerCheckerPermission')) {
+            return $user->hasMakerCheckerPermission('maker-checker.rollback');
+        }
+
+        if (method_exists($user, 'hasPermission')) {
+            return $user->hasPermission('maker-checker.rollback');
+        }
+
+        if (method_exists($user, 'can')) {
+            return $user->can('maker-checker.rollback');
+        }
+
+        return false;
+    }
+
+    /**
+     * Reverse the fulfillment of a request.
+     *
+     * @throws RequestCannotBeRolledBack
+     */
+    private function reverseFulfillment(MakerCheckerRequest $request): void
+    {
+        if ($request->isOfType(RequestType::CREATE)) {
+            $subjectClass = $request->subject_type;
+            if (!class_exists($subjectClass)) {
+                throw RequestCannotBeRolledBack::create("Subject class '{$subjectClass}' does not exist.");
+            }
+
+            // Find and delete the created model
+            /** @var Model $instance */
+            $instance = new $subjectClass;
+            $model = $instance::query()->where($request->payload)->first();
+
+            if ($model === null) {
+                throw RequestCannotBeRolledBack::create('The created model could not be found for rollback.');
+            }
+
+            $model->delete();
+        } elseif ($request->isOfType(RequestType::UPDATE)) {
+            $originalValues = data_get($request->metadata, 'original_values');
+
+            if (empty($originalValues) || !is_array($originalValues)) {
+                throw RequestCannotBeRolledBack::create(
+                    'Original values were not captured when this request was created. Rollback is not possible.'
+                );
+            }
+
+            $subject = $request->subject;
+
+            if (!$subject->exists) {
+                throw RequestCannotBeRolledBack::create('The subject model no longer exists.');
+            }
+
+            $subject->update($originalValues);
+        } else {
+            throw RequestCannotBeRolledBack::create("Rollback is not supported for '{$request->type->value}' requests.");
+        }
     }
 
     private function assertRequestCanBeCancelled(MakerCheckerRequest $request, Model $canceller): void
@@ -404,13 +604,15 @@ class MakerCheckerRequestManager
         $this->assertModelCanCheckRequests($checker);
 
         if (!$request->isActionable()) {
-            throw RequestCannotBeChecked::create('Cannot act on a non-pending or partially approved request.');
+            throw RequestCannotBeChecked::create(
+                "Request is in '{$request->status->value}' status. Only pending or partially approved requests can be approved or rejected."
+            );
         }
 
         $requestExpirationInMinutes = data_get($this->configData, 'request_expiration_in_minutes');
 
-        if ($requestExpirationInMinutes && Carbon::now()
-            ->diffInMinutes($request->created_at) > $requestExpirationInMinutes) {
+        if ($requestExpirationInMinutes && abs(Carbon::now()
+            ->diffInMinutes($request->created_at)) > $requestExpirationInMinutes) {
             throw RequestCannotBeChecked::create('Expired request.');
         }
 
@@ -427,6 +629,9 @@ class MakerCheckerRequestManager
 
         // Validate user-specific approval requirements if applicable
         $this->assertUserCanApproveIfRequired($request, $checker);
+
+        // Validate checker is a legitimate approver for this request
+        $this->assertCheckerIsAuthorizedApprover($request, $checker);
     }
 
     /**
@@ -508,6 +713,52 @@ class MakerCheckerRequestManager
         return null;
     }
 
+    /**
+     * Assert that the checker is a recognized approver for this request.
+     *
+     * Verifies the checker exists in the resolved approvers list (by role or user identity).
+     * Whitelisted emails bypass this check.
+     * If the resolver returns an empty collection (e.g. no user model configured),
+     * the check is skipped to maintain backwards compatibility.
+     */
+    private function assertCheckerIsAuthorizedApprover(MakerCheckerRequest $request, Model $checker): void
+    {
+        $requiredApprovals = $request->required_approvals ?? [];
+
+        // If no specific approvals are required, any valid checker can approve
+        if (empty($requiredApprovals)) {
+            return;
+        }
+
+        // Whitelisted emails bypass approver validation
+        $whitelistEmails = $this->getWhitelistEmails();
+        $checkerEmail = $this->getUserEmail($checker);
+        if ($checkerEmail && in_array($checkerEmail, $whitelistEmails, true)) {
+            return;
+        }
+
+        $resolver = $this->app->make(ApproverResolver::class);
+        $allApprovers = $resolver->getAllApprovers($request);
+
+        // If the resolver returned no approvers (e.g. no user model configured),
+        // skip this check — the other assertion methods already validate
+        // user-specific and role-specific requirements.
+        if ($allApprovers->isEmpty()) {
+            return;
+        }
+
+        $isAuthorized = $allApprovers->contains(
+            fn(Model $approver): bool => $approver->getKey() === $checker->getKey()
+                && $approver->getMorphClass() === $checker->getMorphClass()
+        );
+
+        if (!$isAuthorized) {
+            throw UnauthorizedApproverException::create(
+                'You are not an authorized approver for this request.'
+            );
+        }
+    }
+
     private function assertModelCanCheckRequests(Model $checker): void
     {
         $checkerModel = $checker::class;
@@ -530,7 +781,7 @@ class MakerCheckerRequestManager
     {
         $callback = $this->getHook($request, $hook);
 
-        if ($callback instanceof \Closure) {
+        if ($callback instanceof Closure) {
             $callback($request);
         }
     }
@@ -545,39 +796,64 @@ class MakerCheckerRequestManager
     }
 
     /**
-     * @throws Exception
+     * Log an audit entry for a maker-checker action.
+     *
+     * @param  array<string, mixed>  $metadata
      */
+    private function auditLog(
+        string $action,
+        MakerCheckerRequest $request,
+        Model $actor,
+        string $previousStatus,
+        string $newStatus,
+        array $metadata = [],
+    ): void {
+        try {
+            $this->app->make(AuditService::class)->log(
+                $action,
+                $request,
+                $actor->getMorphClass(),
+                $actor->getKey(),
+                $previousStatus,
+                $newStatus,
+                $metadata,
+            );
+        } catch (Throwable) {
+            // Audit logging should never break the main flow
+        }
+    }
+
     private function fulfillRequest(MakerCheckerRequest $request): void
     {
         if ($request->isOfType(RequestType::CREATE)) {
             $subjectClass = $request->subject_type;
-            if (is_array($request->payload) && class_exists($subjectClass)) {
-                /**
-                 * @var Model $instance
-                 */
-                $instance = new $subjectClass;
-                $instance::query()->firstOrCreate($request->payload);
-                $this->deleteRequestIfConfigured($request);
-            } else {
-                throw new Exception('Payload must be an array');
+            if (!is_array($request->payload)) {
+                throw FulfillmentException::invalidPayload('an array');
             }
+            if (!class_exists($subjectClass)) {
+                throw FulfillmentException::invalidExecutable("Subject class '{$subjectClass}' does not exist.");
+            }
+            /** @var Model $instance */
+            $instance = new $subjectClass;
+            $instance::query()->firstOrCreate($request->payload);
+            $this->deleteRequestIfConfigured($request);
         } elseif ($request->isOfType(RequestType::UPDATE)) {
-            if (is_array($request->payload)) {
-                $request->subject->update($request->payload);
-                $this->deleteRequestIfConfigured($request);
-            } else {
-                throw new Exception('Payload must be an array');
+            if (!is_array($request->payload)) {
+                throw FulfillmentException::invalidPayload('an array');
             }
+            $request->subject->update($request->payload);
+            $this->deleteRequestIfConfigured($request);
         } elseif ($request->isOfType(RequestType::DELETE)) {
             $request->subject->delete();
             $this->deleteRequestIfConfigured($request);
         } elseif ($request->isOfType(RequestType::EXECUTE)) {
-            if (is_string($request->executable) && class_exists($request->executable)) {
-                $this->app->make($request->executable)->execute($request);
-                $this->deleteRequestIfConfigured($request);
-            } else {
-                throw new Exception('Executable must be a string');
+            if (!is_string($request->executable) || !class_exists($request->executable)) {
+                throw FulfillmentException::invalidExecutable(
+                    'Executable must be a valid class name. Got: '.(is_string($request->executable) ? $request->executable : gettype($request->executable))
+                );
             }
+            $this->app->make($request->executable)->execute($request);
+            $this->deleteRequestIfConfigured($request);
         } else {
             throw InvalidRequestTypePassed::create($request->type);
         }

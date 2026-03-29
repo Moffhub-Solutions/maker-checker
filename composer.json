@@ -1,8 +1,29 @@
 {
     "name": "moffhub/maker-checker",
-    "description": "A laravel package to help manage with maker checker tight requirement",
-    "type": "project",
+    "description": "Enterprise-grade maker-checker (four-eyes) approval workflow for Laravel. Multi-role approvals, conditional rules engine, delegation, audit trail, bulk actions, and auto-intercept via Eloquent events.",
+    "type": "library",
     "license": "MIT",
+    "keywords": [
+        "laravel",
+        "maker-checker",
+        "approval-workflow",
+        "four-eyes",
+        "authorization",
+        "approval",
+        "workflow",
+        "multi-level-approval",
+        "audit-trail",
+        "delegation",
+        "role-based",
+        "pending-approval",
+        "eloquent",
+        "laravel-package"
+    ],
+    "homepage": "https://github.com/moffhub/maker-checker",
+    "support": {
+        "issues": "https://github.com/moffhub/maker-checker/issues",
+        "source": "https://github.com/moffhub/maker-checker"
+    },
     "autoload": {
         "psr-4": {
             "Moffhub\\MakerChecker\\": "src/"
@@ -21,17 +42,17 @@
     ],
     "minimum-stability": "stable",
     "require": {
-        "php": "^8.3 || ^8.4 || ^8.5",
-        "illuminate/support": "^12.0",
-        "sourcetoad/enhanced-resources": "^7.1"
+        "php": "^8.4 || ^8.5",
+        "illuminate/support": "^12.0 || ^13.0",
+        "sourcetoad/enhanced-resources": "^7.3"
     },
     "require-dev": {
-        "laravel/pint": "^1.22",
-        "orchestra/testbench": "^10.6",
+        "laravel/pint": "^1.27",
+        "orchestra/testbench": "^10.6 || ^11.0",
         "phpstan/phpstan": "^2.1",
-        "phpunit/phpunit": "^11.5",
+        "phpunit/phpunit": "^11.5 || ^12.5",
         "rector/rector": "^2.0",
-        "sourcetoad/rule-helper-for-laravel": "^6.2"
+        "sourcetoad/rule-helper-for-laravel": "^6.3"
     },
     "config": {
         "sort-packages": true

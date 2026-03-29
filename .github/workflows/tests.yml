@@ -3,11 +3,11 @@ on:
   push:
 jobs:
   tests:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     strategy:
       fail-fast: true
       matrix:
-        php: [8.3, 8.4, 8.5]
+        php: [8.4, 8.5]
         stability: [prefer-lowest, prefer-stable]
     name: PHP ${{ matrix.php }} - ${{ matrix.stability }}
     steps:

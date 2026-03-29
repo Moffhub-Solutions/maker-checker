@@ -11,6 +11,7 @@ use Moffhub\MakerChecker\Events\RequestApproved;
 use Moffhub\MakerChecker\Events\RequestCancelled;
 use Moffhub\MakerChecker\Events\RequestInitiated;
 use Moffhub\MakerChecker\Events\RequestRejected;
+use Moffhub\MakerChecker\Exceptions\DuplicateRequestException;
 use Moffhub\MakerChecker\Exceptions\RequestCannotBeCancelled;
 use Moffhub\MakerChecker\Exceptions\RequestCannotBeChecked;
 use Moffhub\MakerChecker\Facades\MakerChecker;
@@ -432,7 +433,7 @@ class MakerCheckerRequestManagerTest extends BaseTestCase
         $this->assertNotNull($request1);
 
         // Trying to create another request with the same title should fail
-        $this->expectException(\Moffhub\MakerChecker\Exceptions\DuplicateRequestException::class);
+        $this->expectException(DuplicateRequestException::class);
 
         MakerChecker::request()
             ->madeBy($maker)

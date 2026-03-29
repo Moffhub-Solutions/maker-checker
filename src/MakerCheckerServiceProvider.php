@@ -4,18 +4,29 @@ declare(strict_types=1);
 
 namespace Moffhub\MakerChecker;
 
+use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Foundation\Application;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Moffhub\MakerChecker\Console\Commands\ExpireOverDuePendingRequests;
+use Moffhub\MakerChecker\Console\Commands\SendApprovalReminders;
 use Moffhub\MakerChecker\Contracts\ApproverResolver;
+use Moffhub\MakerChecker\Contracts\CallbackServiceInterface;
+use Moffhub\MakerChecker\Contracts\ConditionEvaluatorInterface;
+use Moffhub\MakerChecker\Contracts\ConfigResolverInterface;
 use Moffhub\MakerChecker\Events\RequestApproved;
 use Moffhub\MakerChecker\Events\RequestInitiated;
 use Moffhub\MakerChecker\Events\RequestRejected;
+use Moffhub\MakerChecker\Exceptions\InvalidConfigurationException;
 use Moffhub\MakerChecker\Exceptions\InvalidRequestModelSet;
 use Moffhub\MakerChecker\Models\MakerCheckerRequest;
+use Moffhub\MakerChecker\Services\AuditService;
 use Moffhub\MakerChecker\Services\CallbackService;
+use Moffhub\MakerChecker\Services\ConditionEvaluator;
 use Moffhub\MakerChecker\Services\DefaultApproverResolver;
+use Moffhub\MakerChecker\Services\DelegationService;
 use Moffhub\MakerChecker\Services\NotificationService;
 
 class MakerCheckerServiceProvider extends ServiceProvider
@@ -42,9 +53,18 @@ class MakerCheckerServiceProvider extends ServiceProvider
     public function boot(): void
     {
         if ($this->app->runningInConsole()) {
-            $this->commands([ExpireOverDuePendingRequests::class]);
+            $this->commands([
+                ExpireOverDuePendingRequests::class,
+                SendApprovalReminders::class,
+            ]);
         }
 
+        // Validate configuration in non-testing environments
+        if (!$this->app->runningUnitTests()) {
+            $this->validateConfig();
+        }
+
+        $this->configureRateLimiting();
         $this->loadMigrationsFrom(__DIR__.'/Database/Migrations');
         $this->registerRoutes();
 
@@ -93,6 +113,43 @@ class MakerCheckerServiceProvider extends ServiceProvider
     }
 
     /**
+     * Validate the maker-checker configuration.
+     *
+     * @throws InvalidConfigurationException
+     */
+    protected function validateConfig(): void
+    {
+        $config = $this->app['config']['maker-checker'] ?? [];
+
+        // Validate request_model
+        $requestModel = $config['request_model'] ?? MakerCheckerRequest::class;
+        if (!is_string($requestModel) || !class_exists($requestModel) || !is_a($requestModel, MakerCheckerRequest::class, true)) {
+            throw InvalidConfigurationException::invalidRequestModel((string) $requestModel);
+        }
+
+        // Validate default_approval_count
+        $approvalCount = (int) ($config['default_approval_count'] ?? 1);
+        if ($approvalCount < 1) {
+            throw InvalidConfigurationException::invalidApprovalCount($approvalCount);
+        }
+
+        // Validate config_driver
+        $configDriver = $config['config_driver'] ?? 'file';
+        if (!in_array($configDriver, ['file', 'database'], true)) {
+            throw InvalidConfigurationException::invalidConfigDriver((string) $configDriver);
+        }
+
+        // Validate whitelisted_models
+        $whitelistedModels = $config['whitelisted_models'] ?? ['maker' => [], 'checker' => []];
+        if (isset($whitelistedModels['maker']) && !is_array($whitelistedModels['maker'])) {
+            throw InvalidConfigurationException::invalidWhitelistedModels('maker');
+        }
+        if (isset($whitelistedModels['checker']) && !is_array($whitelistedModels['checker'])) {
+            throw InvalidConfigurationException::invalidWhitelistedModels('checker');
+        }
+    }
+
+    /**
      * Register the package routes.
      */
     protected function registerRoutes(): void
@@ -113,10 +170,34 @@ class MakerCheckerServiceProvider extends ServiceProvider
      */
     protected function routeConfiguration(): array
     {
+        $middleware = config('maker-checker.routes.middleware', ['api']);
+        $rateLimit = config('maker-checker.routes.rate_limit');
+
+        if ($rateLimit) {
+            $middleware[] = 'throttle:maker-checker';
+        }
+
         return [
             'prefix' => config('maker-checker.routes.prefix', 'api'),
-            'middleware' => config('maker-checker.routes.middleware', ['api']),
+            'middleware' => $middleware,
         ];
+    }
+
+    /**
+     * Configure rate limiting for maker-checker routes.
+     */
+    protected function configureRateLimiting(): void
+    {
+        $maxAttempts = (int) config('maker-checker.routes.rate_limit', 60);
+
+        if ($maxAttempts <= 0) {
+            return;
+        }
+
+        RateLimiter::for('maker-checker', function (Request $request) use ($maxAttempts) {
+            return Limit::perMinute($maxAttempts)
+                ->by($request->user()?->getAuthIdentifier() ?: $request->ip());
+        });
     }
 
     private function getMigrationFilePath(string $name): string
@@ -147,15 +228,22 @@ class MakerCheckerServiceProvider extends ServiceProvider
     {
         $this->mergeConfigFrom(__DIR__.'/Config/maker-checker.php', 'maker-checker');
         $this->app->bind(MakerCheckerRequestManager::class,
-            fn(Application $app): \Moffhub\MakerChecker\MakerCheckerRequestManager => new MakerCheckerRequestManager($app));
-        $this->app->bind(RequestBuilder::class, fn(Application $app): \Moffhub\MakerChecker\RequestBuilder => new RequestBuilder($app));
-        $this->app->singleton(ConfigResolver::class, fn(Application $app): \Moffhub\MakerChecker\ConfigResolver => new ConfigResolver($app['config']['maker-checker']));
+            fn(Application $app): MakerCheckerRequestManager => new MakerCheckerRequestManager($app));
+        $this->app->bind(RequestBuilder::class, fn(Application $app): RequestBuilder => new RequestBuilder($app));
+        $this->app->singleton(ConfigResolver::class, fn(Application $app): ConfigResolver => new ConfigResolver($app['config']['maker-checker']));
+
+        // Bind interfaces to concrete implementations
+        $this->app->singleton(ConfigResolverInterface::class, fn(Application $app): ConfigResolver => $app->make(ConfigResolver::class));
+        $this->app->singleton(ConditionEvaluatorInterface::class, fn(): ConditionEvaluator => new ConditionEvaluator);
 
         // Register the approver resolver (can be overridden by user)
         $this->app->bind(ApproverResolver::class, DefaultApproverResolver::class);
 
         // Register services
+        $this->app->singleton(AuditService::class, fn(): AuditService => new AuditService);
+        $this->app->singleton(DelegationService::class, fn(): DelegationService => new DelegationService);
         $this->app->singleton(CallbackService::class, fn(Application $app): CallbackService => new CallbackService($app));
+        $this->app->singleton(CallbackServiceInterface::class, fn(Application $app): CallbackService => $app->make(CallbackService::class));
         $this->app->singleton(NotificationService::class, fn(Application $app): NotificationService => new NotificationService(
             $app->make(ApproverResolver::class)
         ));
@@ -172,7 +260,7 @@ class MakerCheckerServiceProvider extends ServiceProvider
         // On request initiated - notify approvers
         $this->app['events']->listen(RequestInitiated::class, function (RequestInitiated $event) {
             // Execute config callbacks
-            $this->app->make(CallbackService::class)->executeOnInitiated($event->request);
+            $this->app->make(CallbackServiceInterface::class)->executeOnInitiated($event->request);
 
             // Send notifications to approvers
             $sequential = config('maker-checker.notifications.sequential', false);
@@ -182,7 +270,7 @@ class MakerCheckerServiceProvider extends ServiceProvider
         // On request approved - notify maker
         $this->app['events']->listen(RequestApproved::class, function (RequestApproved $event) {
             // Execute config callbacks
-            $this->app->make(CallbackService::class)->executeAfterApproval($event->request);
+            $this->app->make(CallbackServiceInterface::class)->executeAfterApproval($event->request);
 
             // Notify maker
             $this->app->make(NotificationService::class)->notifyRequestApproved($event->request);
@@ -191,7 +279,7 @@ class MakerCheckerServiceProvider extends ServiceProvider
         // On request rejected - notify maker
         $this->app['events']->listen(RequestRejected::class, function (RequestRejected $event) {
             // Execute config callbacks
-            $this->app->make(CallbackService::class)->executeAfterRejection($event->request);
+            $this->app->make(CallbackServiceInterface::class)->executeAfterRejection($event->request);
 
             // Notify maker
             $this->app->make(NotificationService::class)->notifyRequestRejected($event->request);
