@@ -441,6 +441,30 @@ class MakerCheckerRequestManager
             return;
         }
 
+        // In 'any' mode, a user can approve if they fulfill ANY requirement (role or user).
+        // Since role-based approval is handled separately, we only need to block
+        // users who can't fulfill any requirement at all.
+        if ($request->getApprovalMode() === 'any') {
+            $checkerEmail = $this->getUserEmail($checker);
+            $checkerId = (string) $checker->getKey();
+
+            $pendingUsers = $request->getPendingUsers();
+            $isRequiredUser = in_array($checkerEmail, $pendingUsers, true)
+                || in_array($checkerId, $pendingUsers, true);
+
+            $hasPendingRoles = !empty($request->getPendingRoles());
+
+            // In OR mode, allow if they match a pending user OR there are pending roles they could fulfill
+            if ($isRequiredUser || $hasPendingRoles) {
+                return;
+            }
+
+            throw RequestCannotBeChecked::create(
+                'This request requires approval from specific roles or users. You are not authorized to approve it.'
+            );
+        }
+
+        // AND mode (default): original logic
         $pendingUsers = $request->getPendingUsers();
 
         if (empty($pendingUsers)) {
@@ -552,24 +576,30 @@ class MakerCheckerRequestManager
         if ($request->isOfType(RequestType::CREATE)) {
             $subjectClass = $request->subject_type;
             if (is_array($request->payload) && class_exists($subjectClass)) {
-                /**
-                 * @var Model $instance
-                 */
-                $instance = new $subjectClass;
-                $instance::query()->firstOrCreate($request->payload);
+                $this->bypassApprovalIfNeeded($subjectClass, function () use ($subjectClass, $request) {
+                    /** @var Model $instance */
+                    $instance = new $subjectClass;
+                    $instance::query()->firstOrCreate($request->payload);
+                });
                 $this->deleteRequestIfConfigured($request);
             } else {
                 throw new Exception('Payload must be an array');
             }
         } elseif ($request->isOfType(RequestType::UPDATE)) {
             if (is_array($request->payload)) {
-                $request->subject->update($request->payload);
+                $subject = $request->subject;
+                $this->bypassApprovalIfNeeded($subject::class, function () use ($subject, $request) {
+                    $subject->update($request->payload);
+                });
                 $this->deleteRequestIfConfigured($request);
             } else {
                 throw new Exception('Payload must be an array');
             }
         } elseif ($request->isOfType(RequestType::DELETE)) {
-            $request->subject->delete();
+            $subject = $request->subject;
+            $this->bypassApprovalIfNeeded($subject::class, function () use ($subject) {
+                $subject->delete();
+            });
             $this->deleteRequestIfConfigured($request);
         } elseif ($request->isOfType(RequestType::EXECUTE)) {
             if (is_string($request->executable) && class_exists($request->executable)) {
@@ -580,6 +610,23 @@ class MakerCheckerRequestManager
             }
         } else {
             throw InvalidRequestTypePassed::create($request->type);
+        }
+    }
+
+    /**
+     * Execute a callback, bypassing the RequiresApproval trait if the model uses it.
+     *
+     * When fulfilling an approved request, we must bypass the approval trait
+     * to prevent the operation from being intercepted again.
+     *
+     * @param  class-string  $modelClass
+     */
+    private function bypassApprovalIfNeeded(string $modelClass, \Closure $callback): void
+    {
+        if (method_exists($modelClass, 'withoutApprovalDo')) {
+            $modelClass::withoutApprovalDo($callback);
+        } else {
+            $callback();
         }
     }
 

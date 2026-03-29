@@ -215,29 +215,32 @@ class UserApprovalTest extends BaseTestCase
         $this->assertTrue($request->isApproved());
     }
 
-    public function test_notifications_sent_to_specific_users(): void
+    public function test_manual_notifications_sent_to_specific_users(): void
     {
         Notification::fake();
 
         $this->actingAs($this->maker);
 
-        MakerChecker::request()
+        $request = MakerChecker::request()
             ->toCreate(Post::class, ['title' => 'Test', 'user_id' => $this->maker->id])
             ->requiringUsersToApprove(['specific@example.com'])
             ->madeBy($this->maker)
             ->save();
 
+        // Manually trigger notifications (package does not auto-send)
+        MakerChecker::notifyApprovers($request);
+
         Notification::assertSentTo($this->specificApprover, PendingApprovalNotification::class);
         Notification::assertNotSentTo($this->otherUser, PendingApprovalNotification::class);
     }
 
-    public function test_notifications_sent_to_both_roles_and_specific_users(): void
+    public function test_manual_notifications_sent_to_both_roles_and_specific_users(): void
     {
         Notification::fake();
 
         $this->actingAs($this->maker);
 
-        MakerChecker::request()
+        $request = MakerChecker::request()
             ->toCreate(Post::class, ['title' => 'Test', 'user_id' => $this->maker->id])
             ->withRoleAndUserApprovals(
                 ['admin' => 1],
@@ -245,6 +248,9 @@ class UserApprovalTest extends BaseTestCase
             )
             ->madeBy($this->maker)
             ->save();
+
+        // Manually trigger notifications (package does not auto-send)
+        MakerChecker::notifyApprovers($request);
 
         // Both specific user and admin should be notified
         Notification::assertSentTo($this->specificApprover, PendingApprovalNotification::class);

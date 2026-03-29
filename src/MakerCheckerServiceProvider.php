@@ -165,36 +165,35 @@ class MakerCheckerServiceProvider extends ServiceProvider
     }
 
     /**
-     * Register event listeners for notifications and callbacks.
+     * Register event listeners for callbacks.
+     *
+     * Notifications are NOT sent automatically by the package.
+     * Instead, listen to the dispatched events in your application and handle
+     * notifications however you like. The NotificationService and notification
+     * classes are available as optional helpers.
+     *
+     * Events dispatched:
+     * - RequestInitiated — when a new request is created
+     * - RequestApproved  — when a request is fully approved and fulfilled
+     * - RequestRejected  — when a request is rejected
+     * - RequestCancelled — when a request is cancelled by the maker
+     * - RequestFailed    — when request fulfillment fails
      */
     protected function registerEventListeners(): void
     {
-        // On request initiated - notify approvers
+        // On request initiated - execute config callbacks
         $this->app['events']->listen(RequestInitiated::class, function (RequestInitiated $event) {
-            // Execute config callbacks
             $this->app->make(CallbackService::class)->executeOnInitiated($event->request);
-
-            // Send notifications to approvers
-            $sequential = config('maker-checker.notifications.sequential', false);
-            $this->app->make(NotificationService::class)->notifyPendingApproval($event->request, $sequential);
         });
 
-        // On request approved - notify maker
+        // On request approved - execute config callbacks
         $this->app['events']->listen(RequestApproved::class, function (RequestApproved $event) {
-            // Execute config callbacks
             $this->app->make(CallbackService::class)->executeAfterApproval($event->request);
-
-            // Notify maker
-            $this->app->make(NotificationService::class)->notifyRequestApproved($event->request);
         });
 
-        // On request rejected - notify maker
+        // On request rejected - execute config callbacks
         $this->app['events']->listen(RequestRejected::class, function (RequestRejected $event) {
-            // Execute config callbacks
             $this->app->make(CallbackService::class)->executeAfterRejection($event->request);
-
-            // Notify maker
-            $this->app->make(NotificationService::class)->notifyRequestRejected($event->request);
         });
     }
 }

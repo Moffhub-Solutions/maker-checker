@@ -161,21 +161,45 @@ class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
             return count($actualApprovals) >= $this->defaultApprovalCount();
         }
 
+        $mode = $this->getApprovalMode();
+
         // Check for role-based approvals
         $roles = $requiredApprovals['roles'] ?? $requiredApprovals;
         // If there's a 'users' key, the format is new; otherwise it's legacy format
-        $isNewFormat = isset($requiredApprovals['users']) || isset($requiredApprovals['roles']);
+        $isNewFormat = isset($requiredApprovals['users']) || isset($requiredApprovals['roles']) || isset($requiredApprovals['mode']);
 
         if (!$isNewFormat) {
-            // Legacy format: ['role' => count]
+            // Legacy format: ['role' => count] — always AND logic
             foreach ($roles as $role => $count) {
                 $actualCount = collect($actualApprovals)->where('role', $role)->count();
                 if ($actualCount < $count) {
                     return false;
                 }
             }
+        } elseif ($mode === 'any') {
+            // OR mode: threshold is met if ANY role meets its count OR ANY required user has approved
+            $roles = $requiredApprovals['roles'] ?? [];
+            $requiredUsers = $requiredApprovals['users'] ?? [];
+
+            // Check if any role threshold is met
+            foreach ($roles as $role => $count) {
+                $actualCount = collect($actualApprovals)->where('role', $role)->count();
+                if ($actualCount >= $count) {
+                    return true;
+                }
+            }
+
+            // Check if any required user has approved
+            foreach ($requiredUsers as $userIdentifier) {
+                if ($this->hasUserApproved($userIdentifier, $actualApprovals)) {
+                    return true;
+                }
+            }
+
+            // None of the OR conditions were met
+            return false;
         } else {
-            // New format with explicit roles and/or users
+            // AND mode (default): all roles must meet thresholds AND all users must approve
             $roles = $requiredApprovals['roles'] ?? [];
             foreach ($roles as $role => $count) {
                 $actualCount = collect($actualApprovals)->where('role', $role)->count();
@@ -187,24 +211,7 @@ class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
             // Check for user-based approvals
             $requiredUsers = $requiredApprovals['users'] ?? [];
             foreach ($requiredUsers as $userIdentifier) {
-                $userApproved = collect($actualApprovals)->first(function ($approval) use ($userIdentifier) {
-                    // Check by email
-                    if (($approval['user_email'] ?? null) === $userIdentifier) {
-                        return true;
-                    }
-                    // Check by user identifier
-                    if (($approval['user_identifier'] ?? null) === $userIdentifier) {
-                        return true;
-                    }
-                    // Check by ID (for numeric identifiers)
-                    if (is_numeric($userIdentifier) && (string) ($approval['checker_id'] ?? null) === (string) $userIdentifier) {
-                        return true;
-                    }
-
-                    return false;
-                });
-
-                if (!$userApproved) {
+                if (!$this->hasUserApproved($userIdentifier, $actualApprovals)) {
                     return false;
                 }
             }
@@ -218,6 +225,47 @@ class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
         return (int) config('maker-checker.default_approval_count', 1);
     }
 
+    /**
+     * Get the approval mode for this request.
+     *
+     * @return string 'all' (AND logic, default) or 'any' (OR logic)
+     */
+    public function getApprovalMode(): string
+    {
+        $requiredApprovals = $this->required_approvals ?? [];
+
+        return $requiredApprovals['mode'] ?? 'all';
+    }
+
+    /**
+     * Check if a specific user has approved this request.
+     */
+    protected function hasUserApproved(string $userIdentifier, array $actualApprovals): bool
+    {
+        return (bool) collect($actualApprovals)->first(function ($approval) use ($userIdentifier) {
+            if (($approval['user_email'] ?? null) === $userIdentifier) {
+                return true;
+            }
+            if (($approval['user_identifier'] ?? null) === $userIdentifier) {
+                return true;
+            }
+            if (is_numeric($userIdentifier) && (string) ($approval['checker_id'] ?? null) === (string) $userIdentifier) {
+                return true;
+            }
+
+            return false;
+        });
+    }
+
+    /**
+     * Get roles that still need to approve.
+     *
+     * In 'any' mode, returns roles that haven't yet met their threshold.
+     * Once any single role meets its threshold, the approval is satisfied,
+     * so this is informational — showing which roles could still fulfill the requirement.
+     *
+     * @return array<string, int> Role => remaining count needed
+     */
     public function getPendingRoles(): array
     {
         /** @var array $requiredApprovals */
@@ -228,7 +276,7 @@ class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
         $pendingRoles = [];
 
         // Determine format
-        $isNewFormat = isset($requiredApprovals['users']) || isset($requiredApprovals['roles']);
+        $isNewFormat = isset($requiredApprovals['users']) || isset($requiredApprovals['roles']) || isset($requiredApprovals['mode']);
         $roles = $isNewFormat ? ($requiredApprovals['roles'] ?? []) : $requiredApprovals;
 
         foreach ($roles as $role => $requiredCount) {
@@ -243,6 +291,10 @@ class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
 
     /**
      * Get the list of users who still need to approve.
+     *
+     * In 'any' mode, returns users who haven't yet approved.
+     * Once any single user approves, the approval may be satisfied,
+     * so this is informational — showing which users could still fulfill the requirement.
      *
      * @return array<string>
      */
@@ -262,24 +314,7 @@ class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
         $pendingUsers = [];
 
         foreach ($requiredUsers as $userIdentifier) {
-            $userApproved = collect($actualApprovals)->first(function ($approval) use ($userIdentifier) {
-                // Check by email
-                if (($approval['user_email'] ?? null) === $userIdentifier) {
-                    return true;
-                }
-                // Check by user identifier
-                if (($approval['user_identifier'] ?? null) === $userIdentifier) {
-                    return true;
-                }
-                // Check by ID (for numeric identifiers)
-                if (is_numeric($userIdentifier) && (string) ($approval['checker_id'] ?? null) === (string) $userIdentifier) {
-                    return true;
-                }
-
-                return false;
-            });
-
-            if (!$userApproved) {
+            if (!$this->hasUserApproved($userIdentifier, $actualApprovals)) {
                 $pendingUsers[] = $userIdentifier;
             }
         }

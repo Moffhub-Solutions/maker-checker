@@ -311,6 +311,81 @@ class RequestBuilder
     }
 
     /**
+     * Set the approval mode for this request.
+     *
+     * - 'all' (default): ALL role thresholds must be met AND all required users must approve.
+     * - 'any': Approval is granted if ANY single role meets its threshold OR ANY single required user approves.
+     *
+     * @param  string  $mode  'all' or 'any'
+     */
+    public function withApprovalMode(string $mode): self
+    {
+        if (!in_array($mode, ['all', 'any'], true)) {
+            throw new InvalidArgumentException("Approval mode must be 'all' or 'any', got '{$mode}'.");
+        }
+
+        $currentApprovals = $this->request->required_approvals ?? [];
+
+        // Convert legacy format to new format if needed
+        if (!isset($currentApprovals['roles']) && !isset($currentApprovals['users']) && !isset($currentApprovals['mode'])) {
+            $currentApprovals = ['roles' => $currentApprovals];
+        }
+
+        $currentApprovals['mode'] = $mode;
+        $this->request->required_approvals = $currentApprovals;
+        $this->approvalsSet = true;
+
+        return $this;
+    }
+
+    /**
+     * Set approval requirements with OR logic.
+     *
+     * The request will be approved when ANY one of the specified roles meets its threshold
+     * OR ANY one of the specified users approves.
+     *
+     * @param  array<string, int>|array{roles?: array<string, int>, users?: array<string>}  $approvals
+     */
+    public function withAnyApproval(array $approvals): self
+    {
+        // Normalize to new format if legacy
+        if (!isset($approvals['roles']) && !isset($approvals['users'])) {
+            $approvals = ['roles' => $approvals];
+        }
+
+        $approvals['mode'] = 'any';
+        $this->request->required_approvals = $approvals;
+        $this->approvalsSet = true;
+
+        return $this;
+    }
+
+    /**
+     * Require approval from any one of the specified roles OR specific users (OR logic).
+     *
+     * @param  array<string, int>  $roles  Role requirements, e.g., ['admin' => 1, 'manager' => 1]
+     * @param  array<string>  $users  User emails or IDs
+     * @param  bool  $validateUsers  Whether to validate users exist (default: true)
+     */
+    public function withAnyRoleOrUserApproval(array $roles, array $users = [], bool $validateUsers = true): self
+    {
+        $approvals = [
+            'roles' => $roles,
+            'users' => array_unique($users),
+            'mode' => 'any',
+        ];
+
+        if ($validateUsers && !empty($users)) {
+            $approvals['_validate_users'] = true;
+        }
+
+        $this->request->required_approvals = $approvals;
+        $this->approvalsSet = true;
+
+        return $this;
+    }
+
+    /**
      * Provide the fields to check on the request payload for determining request uniqueness.
      * If not provided, the package will check against the entire payload.
      *
