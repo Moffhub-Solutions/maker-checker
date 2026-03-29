@@ -285,7 +285,7 @@ class MakerCheckerRequestManager
                     $this->auditLog('approved', $request, $approver, $previousStatus, $request->status->value);
 
                     // Dispatch the approval event
-                    $this->app['events']->dispatch(new RequestApproved($request));
+                    $this->app['events']->dispatch(RequestApproved::fromRequest($request, $approver));
                 } else {
                     // If some approvals are done but not all, mark as partially approved
                     $request->update([
@@ -354,7 +354,7 @@ class MakerCheckerRequestManager
                 $this->auditLog('rejected', $request, $rejector, $previousStatus, $request->status->value);
 
                 // Dispatch rejection event
-                $this->app['events']->dispatch(new RequestRejected($request));
+                $this->app['events']->dispatch(RequestRejected::fromRequest($request, $rejector, $remarks));
 
                 return $request;
             } catch (Throwable $e) {
@@ -401,7 +401,7 @@ class MakerCheckerRequestManager
             // Audit log
             $this->auditLog('cancelled', $request, $canceller, $previousStatus, $request->status->value);
 
-            $this->app['events']->dispatch(new RequestCancelled($request));
+            $this->app['events']->dispatch(RequestCancelled::fromRequest($request, $remarks));
 
             return $request;
         });
@@ -442,7 +442,7 @@ class MakerCheckerRequestManager
                 $this->auditLog('rolled_back', $request, $actor, $previousStatus, $request->status->value);
 
                 // Dispatch rollback event
-                $this->app['events']->dispatch(new RequestRolledBack($request));
+                $this->app['events']->dispatch(RequestRolledBack::fromRequest($request, $remarks));
 
                 return $request;
             } catch (RequestCannotBeRolledBack $e) {

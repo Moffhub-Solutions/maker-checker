@@ -492,7 +492,7 @@ class RequestBuilder
         try {
             $request->saveOrFail();
 
-            $this->app['events']->dispatch(new RequestInitiated($request));
+            $this->app['events']->dispatch(RequestInitiated::fromRequest($request));
 
             return $request;
         } catch (Throwable $e) {

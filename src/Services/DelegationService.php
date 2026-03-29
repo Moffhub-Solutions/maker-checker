@@ -7,6 +7,7 @@ namespace Moffhub\MakerChecker\Services;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
+use Moffhub\MakerChecker\Events\ApprovalDelegated;
 use Moffhub\MakerChecker\Models\MakerCheckerDelegation;
 
 class DelegationService
@@ -20,7 +21,7 @@ class DelegationService
         ?string $scope = null,
         ?Carbon $expiresAt = null,
     ): MakerCheckerDelegation {
-        return MakerCheckerDelegation::create([
+        $delegation = MakerCheckerDelegation::create([
             'delegator_type' => $delegator->getMorphClass(),
             'delegator_id' => $delegator->getKey(),
             'delegate_type' => $delegate->getMorphClass(),
@@ -28,6 +29,10 @@ class DelegationService
             'scope' => $scope,
             'expires_at' => $expiresAt,
         ]);
+
+        event(ApprovalDelegated::fromDelegation($delegation));
+
+        return $delegation;
     }
 
     /**
