@@ -42,7 +42,7 @@ class ConfigResolver implements ConfigResolverInterface
      */
     public function repository(): ConfigRepository
     {
-        if (!$this->repository instanceof \Moffhub\MakerChecker\Repositories\ConfigRepository) {
+        if (!$this->repository instanceof ConfigRepository) {
             $this->repository = new ConfigRepository;
         }
 

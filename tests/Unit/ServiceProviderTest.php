@@ -7,6 +7,7 @@ namespace Moffhub\MakerChecker\Tests\Unit;
 use Moffhub\MakerChecker\ConfigResolver;
 use Moffhub\MakerChecker\MakerCheckerRequestManager;
 use Moffhub\MakerChecker\MakerCheckerServiceProvider;
+use Moffhub\MakerChecker\Models\MakerCheckerRequest;
 use Moffhub\MakerChecker\RequestBuilder;
 use Moffhub\MakerChecker\Tests\BaseTestCase;
 
@@ -69,7 +70,7 @@ class ServiceProviderTest extends BaseTestCase
         $model = MakerCheckerServiceProvider::resolveRequestModel();
 
         $this->assertInstanceOf(
-            \Moffhub\MakerChecker\Models\MakerCheckerRequest::class,
+            MakerCheckerRequest::class,
             $model
         );
     }
@@ -80,7 +81,7 @@ class ServiceProviderTest extends BaseTestCase
 
         $this->assertIsString($class);
         $this->assertEquals(
-            \Moffhub\MakerChecker\Models\MakerCheckerRequest::class,
+            MakerCheckerRequest::class,
             $class
         );
     }
@@ -90,13 +91,13 @@ class ServiceProviderTest extends BaseTestCase
         // This test verifies the config option exists
         $this->app['config']->set(
             'maker-checker.request_model',
-            \Moffhub\MakerChecker\Models\MakerCheckerRequest::class
+            MakerCheckerRequest::class
         );
 
         $class = MakerCheckerServiceProvider::getRequestModelClass();
 
         $this->assertEquals(
-            \Moffhub\MakerChecker\Models\MakerCheckerRequest::class,
+            MakerCheckerRequest::class,
             $class
         );
     }

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Moffhub\MakerChecker\Tests\Feature;
 
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Moffhub\MakerChecker\Enums\RequestStatus;
 use Moffhub\MakerChecker\Enums\RequestType;
@@ -94,7 +95,7 @@ class DelegationTest extends BaseTestCase
     {
         $service = app(DelegationService::class);
 
-        $expiresAt = now()->addDays(7);
+        $expiresAt = Carbon::now()->addDays(7);
         $delegation = $service->create($this->admin, $this->delegate, null, $expiresAt);
 
         $this->assertTrue($delegation->isActive());
@@ -105,7 +106,7 @@ class DelegationTest extends BaseTestCase
     {
         $service = app(DelegationService::class);
 
-        $delegation = $service->create($this->admin, $this->delegate, null, now()->subDay());
+        $delegation = $service->create($this->admin, $this->delegate, null, Carbon::now()->subDay());
 
         $this->assertTrue($delegation->isExpired());
         $this->assertFalse($delegation->isActive());
@@ -137,7 +138,7 @@ class DelegationTest extends BaseTestCase
 
         $service->create($this->admin, $this->delegate, 'scope1');
         $service->create($this->admin, $this->user, 'scope2');
-        $service->create($this->admin, $this->delegate, null, now()->subDay()); // expired
+        $service->create($this->admin, $this->delegate, null, Carbon::now()->subDay()); // expired
 
         $active = $service->getActiveDelegationsFor($this->admin);
 

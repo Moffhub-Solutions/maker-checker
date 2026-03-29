@@ -228,9 +228,9 @@ class MakerCheckerServiceProvider extends ServiceProvider
     {
         $this->mergeConfigFrom(__DIR__.'/Config/maker-checker.php', 'maker-checker');
         $this->app->bind(MakerCheckerRequestManager::class,
-            fn(Application $app): \Moffhub\MakerChecker\MakerCheckerRequestManager => new MakerCheckerRequestManager($app));
-        $this->app->bind(RequestBuilder::class, fn(Application $app): \Moffhub\MakerChecker\RequestBuilder => new RequestBuilder($app));
-        $this->app->singleton(ConfigResolver::class, fn(Application $app): \Moffhub\MakerChecker\ConfigResolver => new ConfigResolver($app['config']['maker-checker']));
+            fn(Application $app): MakerCheckerRequestManager => new MakerCheckerRequestManager($app));
+        $this->app->bind(RequestBuilder::class, fn(Application $app): RequestBuilder => new RequestBuilder($app));
+        $this->app->singleton(ConfigResolver::class, fn(Application $app): ConfigResolver => new ConfigResolver($app['config']['maker-checker']));
 
         // Bind interfaces to concrete implementations
         $this->app->singleton(ConfigResolverInterface::class, fn(Application $app): ConfigResolver => $app->make(ConfigResolver::class));

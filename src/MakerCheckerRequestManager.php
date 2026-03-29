@@ -245,7 +245,7 @@ class MakerCheckerRequestManager
         $approver = $approver ?? $this->getAuthenticatedUser();
         $this->assertRequestCanBeChecked($request, $approver);
 
-        return DB::transaction(function () use ($request, $approver, $role, $remarks): \Moffhub\MakerChecker\Models\MakerCheckerRequest {
+        return DB::transaction(function () use ($request, $approver, $role, $remarks): MakerCheckerRequest {
             // Re-fetch with pessimistic lock to prevent race conditions
             $request = MakerCheckerRequest::query()
                 ->lockForUpdate()
@@ -332,7 +332,7 @@ class MakerCheckerRequestManager
         $rejector = $rejector ?? $this->getAuthenticatedUser();
         $this->assertRequestCanBeChecked($request, $rejector);
 
-        return DB::transaction(function () use ($request, $rejector, $remarks): \Moffhub\MakerChecker\Models\MakerCheckerRequest {
+        return DB::transaction(function () use ($request, $rejector, $remarks): MakerCheckerRequest {
             $previousStatus = $request->status->value;
 
             try {
@@ -387,7 +387,7 @@ class MakerCheckerRequestManager
         $canceller = $canceller ?? $this->getAuthenticatedUser();
         $this->assertRequestCanBeCancelled($request, $canceller);
 
-        return DB::transaction(function () use ($request, $canceller, $remarks): \Moffhub\MakerChecker\Models\MakerCheckerRequest {
+        return DB::transaction(function () use ($request, $canceller, $remarks): MakerCheckerRequest {
             $previousStatus = $request->status->value;
 
             $request->update([
@@ -557,7 +557,7 @@ class MakerCheckerRequestManager
 
             $subject = $request->subject;
 
-            if ($subject === null || !$subject->exists) {
+            if (!$subject->exists) {
                 throw RequestCannotBeRolledBack::create('The subject model no longer exists.');
             }
 
@@ -781,7 +781,7 @@ class MakerCheckerRequestManager
     {
         $callback = $this->getHook($request, $hook);
 
-        if ($callback instanceof \Closure) {
+        if ($callback instanceof Closure) {
             $callback($request);
         }
     }

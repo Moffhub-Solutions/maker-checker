@@ -71,7 +71,7 @@ class MakerCheckerResource extends Resource
      */
     protected function formatUser(?Model $user): mixed
     {
-        if (!$user instanceof \Illuminate\Database\Eloquent\Model) {
+        if (!$user instanceof Model) {
             return null;
         }
 

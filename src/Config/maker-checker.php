@@ -3,6 +3,9 @@
 declare(strict_types=1);
 
 use Moffhub\MakerChecker\Models\MakerCheckerRequest;
+use Moffhub\MakerChecker\Notifications\PendingApprovalNotification;
+use Moffhub\MakerChecker\Notifications\RequestApprovedNotification;
+use Moffhub\MakerChecker\Notifications\RequestRejectedNotification;
 
 return [
     /*
@@ -354,9 +357,9 @@ return [
         'action_url' => null, // e.g., 'https://app.example.com/approvals/{code}'
 
         // Custom notification classes (optional)
-        'pending_notification' => \Moffhub\MakerChecker\Notifications\PendingApprovalNotification::class,
-        'approved_notification' => \Moffhub\MakerChecker\Notifications\RequestApprovedNotification::class,
-        'rejected_notification' => \Moffhub\MakerChecker\Notifications\RequestRejectedNotification::class,
+        'pending_notification' => PendingApprovalNotification::class,
+        'approved_notification' => RequestApprovedNotification::class,
+        'rejected_notification' => RequestRejectedNotification::class,
     ],
 
     /*

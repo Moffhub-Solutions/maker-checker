@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Moffhub\MakerChecker\Tests\Unit;
 
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Str;
 use Moffhub\MakerChecker\Enums\RequestStatus;
 use Moffhub\MakerChecker\Enums\RequestType;
 use Moffhub\MakerChecker\Events\RequestRolledBack;
@@ -313,7 +315,7 @@ class RollbackTest extends BaseTestCase
 
         // Manually create a request without original_values in metadata
         $request = new MakerCheckerRequest;
-        $request->code = (string) \Illuminate\Support\Str::uuid();
+        $request->code = (string) Str::uuid();
         $request->description = 'Test update';
         $request->type = RequestType::UPDATE;
         $request->status = RequestStatus::APPROVED;
@@ -321,7 +323,7 @@ class RollbackTest extends BaseTestCase
         $request->subject_id = $post->id;
         $request->maker_type = User::class;
         $request->maker_id = $maker->id;
-        $request->made_at = now();
+        $request->made_at = Carbon::now();
         $request->payload = ['title' => 'New Title'];
         $request->metadata = ['hooks' => []];
         $request->saveOrFail();

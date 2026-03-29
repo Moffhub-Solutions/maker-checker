@@ -6,11 +6,13 @@ namespace Moffhub\MakerChecker\Models;
 
 use Closure;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Str;
 use Moffhub\MakerChecker\Contracts\MakerCheckerRequestInterface;
 use Moffhub\MakerChecker\Contracts\MakerCheckerUserContract;
 use Moffhub\MakerChecker\Database\Factories\MakerCheckerRequestFactory;
@@ -64,7 +66,7 @@ use Moffhub\MakerChecker\Facades\MakerChecker;
  * @property Model $subject
  * @property Model $maker
  * @property Model|null $checker
- * @property \Illuminate\Database\Eloquent\Collection<int, MakerCheckerApprovalNote> $notes
+ * @property Collection<int, MakerCheckerApprovalNote> $notes
  *
  * @method static static create(array $attributes = [])
  * @method static static firstOrCreate(array $attributes, array $values = [])
@@ -93,7 +95,7 @@ class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
     {
         static::creating(function (self $model): void {
             if (config('maker-checker.use_uuid_primary_key', false) && empty($model->getKey())) {
-                $model->{$model->getKeyName()} = (string) \Illuminate\Support\Str::uuid();
+                $model->{$model->getKeyName()} = (string) Str::uuid();
             }
         });
     }

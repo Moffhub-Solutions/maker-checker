@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Moffhub\MakerChecker\Models;
 
+use Carbon\Carbon;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
@@ -31,8 +32,8 @@ use Moffhub\MakerChecker\Services\ConditionEvaluator;
  * @property int|null $team_id Optional team ID for multi-tenant configs
  * @property array<string, mixed>|null $metadata Additional configuration data
  * @property string|null $description Human-readable description
- * @property \Carbon\Carbon $created_at
- * @property \Carbon\Carbon $updated_at
+ * @property Carbon $created_at
+ * @property Carbon $updated_at
  *
  * @method static Builder<static> forModel(string $modelClass)
  * @method static Builder<static> forExecutable(string $executableClass)

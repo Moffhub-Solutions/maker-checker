@@ -7,6 +7,7 @@ namespace Moffhub\MakerChecker\Models;
 use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Support\Carbon;
 
 /**
  * @property int $id
@@ -15,9 +16,9 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
  * @property string $delegate_type
  * @property int $delegate_id
  * @property string|null $scope
- * @property \Illuminate\Support\Carbon|null $expires_at
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
+ * @property Carbon|null $expires_at
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
  * @property Model $delegator
  * @property Model|null $delegate
  */

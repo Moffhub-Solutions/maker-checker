@@ -9,6 +9,7 @@ use Exception;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 use Laravel\SerializableClosure\SerializableClosure;
@@ -480,7 +481,7 @@ class RequestBuilder
 
         $request->status = RequestStatus::PENDING;
         $request->metadata = $this->generateMetadata();
-        $request->made_at = now();
+        $request->made_at = Carbon::now();
 
         if (data_get($this->configData, 'ensure_requests_are_unique')) {
             $this->assertRequestIsUnique($request);

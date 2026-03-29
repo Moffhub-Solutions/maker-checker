@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Moffhub\MakerChecker\Http\Controllers;
 
+use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -28,7 +29,7 @@ class MakerCheckerDelegationController extends Controller
     {
         $user = $this->getAuthenticatedUser($request);
 
-        /** @var \Illuminate\Database\Eloquent\Collection<int, MakerCheckerDelegation> $delegations */
+        /** @var Collection<int, MakerCheckerDelegation> $delegations */
         $delegations = MakerCheckerDelegation::query()
             ->where(function ($query) use ($user) {
                 $query->where('delegator_type', $user->getMorphClass())

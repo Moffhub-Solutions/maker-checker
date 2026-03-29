@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Support\Carbon;
 use Moffhub\MakerChecker\Database\Factories\MakerCheckerApprovalNoteFactory;
 
 /**
@@ -17,8 +18,8 @@ use Moffhub\MakerChecker\Database\Factories\MakerCheckerApprovalNoteFactory;
  * @property int $user_id
  * @property string $action
  * @property string $note
- * @property \Illuminate\Support\Carbon|null $created_at
- * @property \Illuminate\Support\Carbon|null $updated_at
+ * @property Carbon|null $created_at
+ * @property Carbon|null $updated_at
  * @property MakerCheckerRequest $request
  * @property Model $user
  */

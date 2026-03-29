@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Moffhub\MakerChecker\Http\Controllers;
 
+use Illuminate\Database\Query\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
@@ -91,7 +92,7 @@ class MakerCheckerAuditController extends Controller
     /**
      * Export audit logs as CSV.
      *
-     * @param  \Illuminate\Database\Query\Builder  $query
+     * @param  Builder  $query
      */
     protected function exportCsv($query): StreamedResponse
     {
