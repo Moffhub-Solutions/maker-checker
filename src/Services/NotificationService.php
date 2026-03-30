@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Moffhub\MakerChecker\Services;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Notification;
 use Moffhub\MakerChecker\Contracts\ApproverResolver;
 use Moffhub\MakerChecker\Models\MakerCheckerRequest;
@@ -210,7 +211,7 @@ class NotificationService
     /**
      * Send pending approval notifications to a collection of approvers.
      *
-     * @param  \Illuminate\Support\Collection<int, Model>  $approvers
+     * @param  Collection<int, Model>  $approvers
      */
     protected function sendPendingNotifications($approvers, MakerCheckerRequest $request, ?string $role = null): void
     {

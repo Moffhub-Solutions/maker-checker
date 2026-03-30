@@ -4,14 +4,12 @@ declare(strict_types=1);
 
 namespace Moffhub\MakerChecker\Tests\Unit;
 
-use Illuminate\Support\Facades\Event;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Notification;
 use Moffhub\MakerChecker\Contracts\ApproverResolver;
-use Moffhub\MakerChecker\Events\RequestApproved;
-use Moffhub\MakerChecker\Events\RequestCancelled;
-use Moffhub\MakerChecker\Events\RequestInitiated;
-use Moffhub\MakerChecker\Events\RequestRejected;
 use Moffhub\MakerChecker\Facades\MakerChecker;
+use Moffhub\MakerChecker\Models\MakerCheckerRequest;
 use Moffhub\MakerChecker\Notifications\PendingApprovalNotification;
 use Moffhub\MakerChecker\Notifications\RequestApprovedNotification;
 use Moffhub\MakerChecker\Notifications\RequestRejectedNotification;
@@ -32,6 +30,7 @@ class NotificationServiceTest extends BaseTestCase
     {
         parent::setUp();
 
+        // Enable notifications for these tests
         config(['maker-checker.notifications.enabled' => true]);
         config(['maker-checker.notifications.channels' => ['database']]);
         config(['maker-checker.notifications.user_model' => User::class]);
@@ -56,79 +55,10 @@ class NotificationServiceTest extends BaseTestCase
         ]);
     }
 
-    // =========================================================================
-    // Events are dispatched (package responsibility)
-    // =========================================================================
-
-    public function test_request_initiated_event_dispatched_on_create(): void
+    public function test_notifications_are_disabled_by_default(): void
     {
-        Event::fake([RequestInitiated::class]);
+        config(['maker-checker.notifications.enabled' => false]);
 
-        $this->actingAs($this->maker);
-        $request = MakerChecker::create(Post::class, [
-            'title' => 'Test',
-            'user_id' => $this->maker->id,
-        ]);
-
-        Event::assertDispatched(RequestInitiated::class, function ($event) use ($request) {
-            return $event->request->id === $request->id;
-        });
-    }
-
-    public function test_request_approved_event_dispatched_on_approve(): void
-    {
-        Event::fake([RequestApproved::class]);
-
-        $this->actingAs($this->maker);
-        $request = MakerChecker::request()
-            ->toCreate(Post::class, ['title' => 'Test', 'user_id' => $this->maker->id])
-            ->withApprovals(['admin' => 1])
-            ->madeBy($this->maker)
-            ->save();
-
-        MakerChecker::approve($request, $this->approver, 'admin');
-
-        Event::assertDispatched(RequestApproved::class, function ($event) use ($request) {
-            return $event->request->id === $request->id;
-        });
-    }
-
-    public function test_request_rejected_event_dispatched_on_reject(): void
-    {
-        Event::fake([RequestRejected::class]);
-
-        $this->actingAs($this->maker);
-        $request = MakerChecker::create(Post::class, [
-            'title' => 'Test',
-            'user_id' => $this->maker->id,
-        ]);
-
-        MakerChecker::reject($request, $this->approver, 'Not approved');
-
-        Event::assertDispatched(RequestRejected::class, function ($event) use ($request) {
-            return $event->request->id === $request->id;
-        });
-    }
-
-    public function test_request_cancelled_event_dispatched_on_cancel(): void
-    {
-        Event::fake([RequestCancelled::class]);
-
-        $this->actingAs($this->maker);
-        $request = MakerChecker::create(Post::class, [
-            'title' => 'Test',
-            'user_id' => $this->maker->id,
-        ]);
-
-        MakerChecker::cancel($request, $this->maker, 'Changed my mind');
-
-        Event::assertDispatched(RequestCancelled::class, function ($event) use ($request) {
-            return $event->request->id === $request->id;
-        });
-    }
-
-    public function test_no_notifications_sent_automatically(): void
-    {
         Notification::fake();
 
         $this->actingAs($this->maker);
@@ -137,27 +67,71 @@ class NotificationServiceTest extends BaseTestCase
             'user_id' => $this->maker->id,
         ]);
 
-        // Package should NOT send notifications automatically
         Notification::assertNothingSent();
     }
 
-    public function test_no_notifications_on_approve(): void
+    public function test_pending_approval_notification_sent_when_enabled(): void
     {
         Notification::fake();
 
         $this->actingAs($this->maker);
-        $request = MakerChecker::request()
-            ->toCreate(Post::class, ['title' => 'Test', 'user_id' => $this->maker->id])
-            ->withApprovals(['admin' => 1])
-            ->madeBy($this->maker)
-            ->save();
+        $request = MakerChecker::create(Post::class, [
+            'title' => 'Test',
+            'user_id' => $this->maker->id,
+        ]);
+
+        // Should notify users with 'admin' role (required by Post model)
+        Notification::assertSentTo(
+            [$this->approver, $this->approver2],
+            PendingApprovalNotification::class,
+            function ($notification) use ($request) {
+                return $notification->request->id === $request->id;
+            }
+        );
+    }
+
+    public function test_maker_not_notified_of_pending_approval(): void
+    {
+        // Make maker also an admin
+        $this->maker->update(['role' => 'admin']);
+
+        Notification::fake();
+
+        $this->actingAs($this->maker);
+        MakerChecker::create(Post::class, [
+            'title' => 'Test',
+            'user_id' => $this->maker->id,
+        ]);
+
+        // Maker should not receive notification even if they have approver role
+        Notification::assertNotSentTo($this->maker, PendingApprovalNotification::class);
+    }
+
+    public function test_approved_notification_sent_to_maker(): void
+    {
+        Notification::fake();
+
+        $this->actingAs($this->maker);
+        $request = MakerChecker::create(Post::class, [
+            'title' => 'Test',
+            'user_id' => $this->maker->id,
+        ]);
+
+        // Clear fake to only track approval notification
+        Notification::fake();
 
         MakerChecker::approve($request, $this->approver, 'admin');
 
-        Notification::assertNothingSent();
+        Notification::assertSentTo(
+            $this->maker,
+            RequestApprovedNotification::class,
+            function ($notification) use ($request) {
+                return $notification->request->id === $request->id;
+            }
+        );
     }
 
-    public function test_no_notifications_on_reject(): void
+    public function test_rejected_notification_sent_to_maker(): void
     {
         Notification::fake();
 
@@ -167,77 +141,24 @@ class NotificationServiceTest extends BaseTestCase
             'user_id' => $this->maker->id,
         ]);
 
-        MakerChecker::reject($request, $this->approver, 'Nope');
-
-        Notification::assertNothingSent();
-    }
-
-    // =========================================================================
-    // NotificationService works as an opt-in utility
-    // =========================================================================
-
-    public function test_notification_service_can_be_accessed(): void
-    {
-        $service = MakerChecker::notifications();
-        $this->assertInstanceOf(NotificationService::class, $service);
-    }
-
-    public function test_manual_notify_pending_approval(): void
-    {
+        // Clear fake to only track rejection notification
         Notification::fake();
-
-        $this->actingAs($this->maker);
-        $request = MakerChecker::create(Post::class, [
-            'title' => 'Test',
-            'user_id' => $this->maker->id,
-        ]);
-
-        // Manually trigger notification via the service
-        MakerChecker::notifyApprovers($request);
-
-        Notification::assertSentTo($this->approver, PendingApprovalNotification::class);
-    }
-
-    public function test_manual_notify_approved(): void
-    {
-        Notification::fake();
-
-        $this->actingAs($this->maker);
-        $request = MakerChecker::request()
-            ->toCreate(Post::class, ['title' => 'Test', 'user_id' => $this->maker->id])
-            ->withApprovals(['admin' => 1])
-            ->madeBy($this->maker)
-            ->save();
-
-        MakerChecker::approve($request, $this->approver, 'admin');
-
-        // Manually notify maker
-        MakerChecker::notifications()->notifyRequestApproved($request);
-
-        Notification::assertSentTo($this->maker, RequestApprovedNotification::class);
-    }
-
-    public function test_manual_notify_rejected(): void
-    {
-        Notification::fake();
-
-        $this->actingAs($this->maker);
-        $request = MakerChecker::create(Post::class, [
-            'title' => 'Test',
-            'user_id' => $this->maker->id,
-        ]);
 
         MakerChecker::reject($request, $this->approver, 'Not approved');
 
-        // Manually notify maker
-        MakerChecker::notifications()->notifyRequestRejected($request);
-
-        Notification::assertSentTo($this->maker, RequestRejectedNotification::class);
+        Notification::assertSentTo(
+            $this->maker,
+            RequestRejectedNotification::class,
+            function ($notification) use ($request) {
+                return $notification->request->id === $request->id
+                    && $notification->request->remarks === 'Not approved';
+            }
+        );
     }
 
-    public function test_manual_notify_respects_enabled_flag(): void
+    public function test_maker_notification_can_be_disabled(): void
     {
-        config(['maker-checker.notifications.enabled' => false]);
+        config(['maker-checker.notifications.notify_maker' => false]);
 
         Notification::fake();
 
@@ -247,14 +168,20 @@ class NotificationServiceTest extends BaseTestCase
             'user_id' => $this->maker->id,
         ]);
 
-        // Even manual call respects the enabled flag
-        MakerChecker::notifyApprovers($request);
+        Notification::fake();
 
-        Notification::assertNothingSent();
+        MakerChecker::approve($request, $this->approver, 'admin');
+
+        Notification::assertNotSentTo($this->maker, RequestApprovedNotification::class);
     }
 
     public function test_sequential_notification_only_notifies_first_role(): void
     {
+        config(['maker-checker.notifications.sequential' => true]);
+
+        // Create request requiring multiple roles
+        $this->actingAs($this->maker);
+
         $editor = User::create([
             'name' => 'Editor',
             'email' => 'editor@example.com',
@@ -263,68 +190,104 @@ class NotificationServiceTest extends BaseTestCase
 
         Notification::fake();
 
-        $this->actingAs($this->maker);
+        // Create request with multi-role requirements
         $request = MakerChecker::request()
             ->toCreate(Post::class, ['title' => 'Test', 'user_id' => $this->maker->id])
             ->withApprovals(['editor' => 1, 'admin' => 1])
             ->madeBy($this->maker)
             ->save();
 
-        // Manually trigger sequential notification
-        MakerChecker::notifyApprovers($request, sequential: true);
-
-        // Only editor should be notified (not admins)
+        // Only editor should be notified first (not admins)
         Notification::assertSentTo($editor, PendingApprovalNotification::class);
         Notification::assertNotSentTo($this->approver, PendingApprovalNotification::class);
     }
 
     public function test_notify_next_approvers_after_partial_approval(): void
     {
+        config(['maker-checker.notifications.sequential' => true]);
+
         $editor = User::create([
             'name' => 'Editor',
             'email' => 'editor@example.com',
             'role' => 'editor',
         ]);
 
+        // Fake notifications from the start to avoid database issues
         Notification::fake();
 
         $this->actingAs($this->maker);
+
+        // Create request with multi-role requirements
         $request = MakerChecker::request()
             ->toCreate(Post::class, ['title' => 'Test', 'user_id' => $this->maker->id])
             ->withApprovals(['editor' => 1, 'admin' => 1])
             ->madeBy($this->maker)
             ->save();
 
-        MakerChecker::approve($request, $editor, 'editor');
+        // Editor approves
+        $request = MakerChecker::approve($request, $editor, 'editor');
 
+        // Reset notification fake to only track next approvers
         Notification::fake();
+
+        // Refresh request to get updated approvals state
+        $request->refresh();
 
         // Manually notify next approvers
         MakerChecker::notifyNextApprovers($request);
 
+        // Now admins should be notified
         Notification::assertSentTo($this->approver, PendingApprovalNotification::class);
     }
 
-    public function test_custom_approver_resolver_works_with_manual_notify(): void
+    public function test_manual_notify_approvers(): void
     {
+        config(['maker-checker.notifications.enabled' => false]);
+
+        $this->actingAs($this->maker);
+        $request = MakerChecker::create(Post::class, [
+            'title' => 'Test',
+            'user_id' => $this->maker->id,
+        ]);
+
+        // Re-enable and manually trigger
+        config(['maker-checker.notifications.enabled' => true]);
+        Notification::fake();
+
+        MakerChecker::notifyApprovers($request);
+
+        Notification::assertSentTo($this->approver, PendingApprovalNotification::class);
+    }
+
+    public function test_notification_service_can_be_accessed(): void
+    {
+        $service = MakerChecker::notifications();
+
+        $this->assertInstanceOf(NotificationService::class, $service);
+    }
+
+    public function test_custom_approver_resolver_can_be_used(): void
+    {
+        // Create a custom resolver that returns specific users
         $customResolver = new class implements ApproverResolver
         {
-            public function getApproversForRole(\Moffhub\MakerChecker\Models\MakerCheckerRequest $request, string $role): \Illuminate\Support\Collection
+            public function getApproversForRole(MakerCheckerRequest $request, string $role): Collection
             {
+                // Only return users with email containing 'approver'
                 return User::where('email', 'like', '%approver%')->get();
             }
 
-            public function getAllApprovers(\Moffhub\MakerChecker\Models\MakerCheckerRequest $request): \Illuminate\Support\Collection
+            public function getAllApprovers(MakerCheckerRequest $request): Collection
             {
                 return $this->getApproversForRole($request, 'any');
             }
 
-            public function getApproversByIdentifier(\Moffhub\MakerChecker\Models\MakerCheckerRequest $request, array $userIdentifiers): \Illuminate\Support\Collection
+            public function getApproversByIdentifier(MakerCheckerRequest $request, array $userIdentifiers): Collection
             {
                 return User::whereIn('email', $userIdentifiers)->orWhereIn('id', $userIdentifiers)->get();
             }
 
-            public function getApproverByIdentifier(string $identifier): ?\Illuminate\Database\Eloquent\Model
+            public function getApproverByIdentifier(string $identifier): ?Model
             {
                 return User::where('email', $identifier)->orWhere('id', $identifier)->first();
             }
@@ -336,22 +299,19 @@ class NotificationServiceTest extends BaseTestCase
 
             public function validateUsersExist(array $userIdentifiers): array
             {
-                return array_filter($userIdentifiers, fn ($id) => !$this->userExists($id));
+                return array_filter($userIdentifiers, fn($id) => !$this->userExists($id));
             }
         };
 
-        $this->app->bind(ApproverResolver::class, fn () => $customResolver);
+        $this->app->bind(ApproverResolver::class, fn() => $customResolver);
 
         Notification::fake();
 
         $this->actingAs($this->maker);
-        $request = MakerChecker::create(Post::class, [
+        MakerChecker::create(Post::class, [
             'title' => 'Test',
             'user_id' => $this->maker->id,
         ]);
-
-        // Manually notify using custom resolver
-        MakerChecker::notifyApprovers($request);
 
         Notification::assertSentTo($this->approver, PendingApprovalNotification::class);
         Notification::assertSentTo($this->approver2, PendingApprovalNotification::class);

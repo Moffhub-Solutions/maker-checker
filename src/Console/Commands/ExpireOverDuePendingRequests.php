@@ -7,6 +7,7 @@ namespace Moffhub\MakerChecker\Console\Commands;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Moffhub\MakerChecker\Enums\RequestStatus;
+use Moffhub\MakerChecker\Events\RequestExpired;
 use Moffhub\MakerChecker\MakerCheckerServiceProvider;
 
 class ExpireOverDuePendingRequests extends Command
@@ -56,7 +57,17 @@ class ExpireOverDuePendingRequests extends Command
             return self::SUCCESS;
         }
 
-        $query->update(['status' => RequestStatus::EXPIRED]);
+        // Fetch requests before updating so we can dispatch events with full data
+        $requests = $query->with('maker')->get();
+
+        $requestModel::query()
+            ->whereIn('id', $requests->pluck('id'))
+            ->update(['status' => RequestStatus::EXPIRED]);
+
+        foreach ($requests as $request) {
+            $request->status = RequestStatus::EXPIRED;
+            event(RequestExpired::fromRequest($request));
+        }
 
         $this->info("{$count} pending/partially approved request(s) marked as expired successfully.");
 

@@ -155,6 +155,8 @@ class DefaultApproverResolver implements ApproverResolver
 
     /**
      * Get all users who can approve the given request (any required role).
+     *
+     * This also includes delegates of the resolved approvers (via DelegationService).
      */
     public function getAllApprovers(MakerCheckerRequest $request): Collection
     {
@@ -165,7 +167,9 @@ class DefaultApproverResolver implements ApproverResolver
 
         if (empty($requiredApprovals)) {
             // No specific roles required, get all potential approvers
-            return $this->getAllPotentialApprovers($request);
+            $approvers = $this->getAllPotentialApprovers($request);
+
+            return $this->mergeWithDelegates($approvers);
         }
 
         $approvers = collect();
@@ -195,8 +199,30 @@ class DefaultApproverResolver implements ApproverResolver
             }
         }
 
+        // Include delegates
+        $approvers = $this->mergeWithDelegates($approvers);
+
         // Remove duplicates (same user with multiple roles)
         return $approvers->unique(fn(Model $user) => $user->getKey());
+    }
+
+    /**
+     * Merge approvers with their delegates.
+     *
+     * @param  Collection<int, Model>  $approvers
+     * @return Collection<int, Model>
+     */
+    protected function mergeWithDelegates(Collection $approvers): Collection
+    {
+        try {
+            $delegationService = app(DelegationService::class);
+            $delegates = $delegationService->getDelegatesForApprovers($approvers);
+
+            return $approvers->merge($delegates);
+        } catch (\Throwable) {
+            // If delegation table doesn't exist or service is unavailable, skip
+            return $approvers;
+        }
     }
 
     /**

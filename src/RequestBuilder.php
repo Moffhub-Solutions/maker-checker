@@ -9,6 +9,7 @@ use Exception;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Foundation\Application;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use InvalidArgumentException;
 use Laravel\SerializableClosure\SerializableClosure;
@@ -34,6 +35,8 @@ class RequestBuilder
     private bool $uniqueIdentifiersSet = false;
 
     private bool $approvalsSet = false;
+
+    private array $originalValues = [];
 
     private MakerCheckerRequest $request;
 
@@ -156,6 +159,10 @@ class RequestBuilder
         $this->request->subject()->associate($modelToUpdate);
         $this->request->payload = $requestedChanges;
         $this->request->team_id = $teamId;
+
+        // Capture original values for the changed fields to support rollback
+        $changedFields = array_keys($requestedChanges);
+        $this->originalValues = Arr::only($modelToUpdate->getAttributes(), $changedFields);
 
         // Handle approvals
         if ($requiredApprovals !== []) {
@@ -549,7 +556,7 @@ class RequestBuilder
 
         $request->status = RequestStatus::PENDING;
         $request->metadata = $this->generateMetadata();
-        $request->made_at = now();
+        $request->made_at = Carbon::now();
 
         if (data_get($this->configData, 'ensure_requests_are_unique')) {
             $this->assertRequestIsUnique($request);
@@ -561,7 +568,7 @@ class RequestBuilder
         try {
             $request->saveOrFail();
 
-            $this->app['events']->dispatch(new RequestInitiated($request));
+            $this->app['events']->dispatch(RequestInitiated::fromRequest($request));
 
             return $request;
         } catch (Throwable $e) {
@@ -572,14 +579,21 @@ class RequestBuilder
             $this->uniqueIdentifiers = [];
             $this->uniqueIdentifiersSet = false;
             $this->approvalsSet = false;
+            $this->originalValues = [];
         }
     }
 
     private function generateMetadata(): array
     {
-        return [
+        $metadata = [
             'hooks' => $this->hooks,
         ];
+
+        if ($this->originalValues !== []) {
+            $metadata['original_values'] = $this->originalValues;
+        }
+
+        return $metadata;
     }
 
     /**

@@ -6,6 +6,7 @@ namespace Moffhub\MakerChecker\Tests;
 
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Moffhub\MakerChecker\MakerCheckerServiceProvider;
+use Moffhub\MakerChecker\Tests\Fixtures\Models\User;
 use Orchestra\Testbench\TestCase;
 
 abstract class BaseTestCase extends TestCase
@@ -33,6 +34,8 @@ abstract class BaseTestCase extends TestCase
         $app['config']->set('maker-checker.default_approval_count', 1);
         $app['config']->set('maker-checker.ensure_requests_are_unique', false);
         $app['config']->set('maker-checker.delete_on_completion', false);
+        $app['config']->set('maker-checker.notifications.user_model', User::class);
+        $app['config']->set('auth.providers.users.model', User::class);
     }
 
     protected function defineDatabaseMigrations(): void
