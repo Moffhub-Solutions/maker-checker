@@ -153,7 +153,11 @@ class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
 
     public function hasMetApprovalThreshold(): bool
     {
-        $requiredApprovals = $this->required_approvals ?? [];
+        $requiredApprovals = $this->required_approvals;
+        if (is_numeric($requiredApprovals) || !is_array($requiredApprovals)) {
+            $requiredCount = is_numeric($requiredApprovals) ? (int) $requiredApprovals : $this->defaultApprovalCount();
+            return count($this->approvals ?? []) >= $requiredCount;
+        }
         /** @var array $actualApprovals */
         $actualApprovals = $this->approvals ?? [];
 
@@ -232,7 +236,10 @@ class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
      */
     public function getApprovalMode(): string
     {
-        $requiredApprovals = $this->required_approvals ?? [];
+        $requiredApprovals = $this->required_approvals;
+        if (!is_array($requiredApprovals)) {
+            return 'all';
+        }
 
         return $requiredApprovals['mode'] ?? 'all';
     }
@@ -268,8 +275,10 @@ class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
      */
     public function getPendingRoles(): array
     {
-        /** @var array $requiredApprovals */
-        $requiredApprovals = $this->required_approvals ?? [];
+        $requiredApprovals = $this->required_approvals;
+        if (is_numeric($requiredApprovals) || !is_array($requiredApprovals)) {
+            return [];
+        }
         /** @var array $actualApprovals */
         $actualApprovals = $this->approvals ?? [];
 
@@ -300,8 +309,10 @@ class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
      */
     public function getPendingUsers(): array
     {
-        /** @var array $requiredApprovals */
-        $requiredApprovals = $this->required_approvals ?? [];
+        $requiredApprovals = $this->required_approvals;
+        if (!is_array($requiredApprovals)) {
+            return [];
+        }
         /** @var array $actualApprovals */
         $actualApprovals = $this->approvals ?? [];
 
@@ -327,7 +338,10 @@ class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
      */
     public function requiresUserApprovals(): bool
     {
-        $requiredApprovals = $this->required_approvals ?? [];
+        $requiredApprovals = $this->required_approvals;
+        if (!is_array($requiredApprovals)) {
+            return false;
+        }
 
         return !empty($requiredApprovals['users']);
     }

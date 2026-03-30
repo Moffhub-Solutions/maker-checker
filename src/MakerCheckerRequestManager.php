@@ -434,7 +434,10 @@ class MakerCheckerRequestManager
      */
     private function assertUserCanApproveIfRequired(MakerCheckerRequest $request, Model $checker): void
     {
-        $requiredApprovals = $request->required_approvals ?? [];
+        $requiredApprovals = $request->required_approvals;
+        if (!is_array($requiredApprovals)) {
+            return;
+        }
 
         // Check if there are user-specific requirements
         if (!isset($requiredApprovals['users']) || empty($requiredApprovals['users'])) {

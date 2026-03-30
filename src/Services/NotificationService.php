@@ -30,7 +30,10 @@ class NotificationService
             return;
         }
 
-        $requiredApprovals = $request->required_approvals ?? [];
+        $requiredApprovals = $request->required_approvals;
+        if (is_numeric($requiredApprovals) || !is_array($requiredApprovals)) {
+            $requiredApprovals = [];
+        }
 
         if (empty($requiredApprovals)) {
             // No specific roles, notify all potential approvers
