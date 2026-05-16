@@ -38,8 +38,10 @@ use Moffhub\MakerChecker\Relations\ApprovableMorphToMany;
  *     public function compensations(): BelongsToMany { ... }
  * }
  *
- * // Native syntax is now intercepted:
- * $saved = $employee->compensations()->attach($compensation); // false + pending request
+ * // Native syntax is now intercepted. Relationship methods have varying
+ * // return types (attach() is void), so detect interception via
+ * // wasIntercepted()/getInterceptedRequest(), not a return value.
+ * $employee->compensations()->attach($compensation);
  *
  * if ($employee::wasIntercepted()) {
  *     $request = $employee::getInterceptedRequest();
@@ -65,12 +67,12 @@ trait InterceptsRelationships
 
         $allowed = $config[$relation];
 
-        // true / '*' means every supported operation on this relation.
-        if ($allowed === true || $allowed === '*') {
+        // true means every supported operation on this relation.
+        if ($allowed === true) {
             return true;
         }
 
-        return is_array($allowed) && in_array($operation, $allowed, true);
+        return in_array($operation, $allowed, true);
     }
 
     /**
@@ -108,8 +110,12 @@ trait InterceptsRelationships
             if (is_int($key)) {
                 // List form: value is the relation name, all operations.
                 $normalized[(string) $value] = true;
+            } elseif ($value === true || $value === '*' || $value === ['*']) {
+                // Map form, all operations.
+                $normalized[$key] = true;
             } else {
-                $normalized[$key] = $value;
+                // Map form, explicit list of operations.
+                $normalized[$key] = (array) $value;
             }
         }
 

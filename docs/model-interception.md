@@ -170,9 +170,11 @@ class Employee extends Model
     public function compensations(): BelongsToMany { /* ... */ }
 }
 
-$saved = $employee->compensations()->attach($compensation);
+$employee->compensations()->attach($compensation);
 
-if (!$saved && Employee::wasIntercepted()) {
+// Relationship methods have varying return types (attach() is void),
+// so detect interception via wasIntercepted(), not the return value.
+if (Employee::wasIntercepted()) {
     $request = Employee::getInterceptedRequest();
 }
 ```

@@ -13,9 +13,11 @@ use Illuminate\Database\Eloquent\Model;
  */
 trait InterceptsPivotCalls
 {
-    public function attach($id, array $attributes = [], $touch = true)
+    public function attach($id, array $attributes = [], $touch = true): void
     {
-        return $this->interceptRelation(
+        // attach() is void in Eloquent; interception happens via side effects
+        // (a pending request is created and recorded on the model class).
+        $this->interceptRelation(
             'attach',
             fn() => parent::attach($id, $attributes, $touch),
             $id,

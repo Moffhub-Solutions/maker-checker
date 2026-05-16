@@ -82,7 +82,7 @@ class RelationshipApprovalTest extends BaseTestCase
         MakerChecker::approve($request, $this->approver);
 
         $this->assertSame(1, $article->tags()->count());
-        $this->assertSame('high', $article->tags()->first()->pivot->relevance);
+        $this->assertSame('high', $article->tags()->first()->pivot->getAttribute('relevance'));
     }
 
     public function test_explicit_detach_is_applied_on_approval(): void
@@ -123,9 +123,10 @@ class RelationshipApprovalTest extends BaseTestCase
         $employee = Employee::create(['name' => 'Jane']);
         $comp = Compensation::create(['label' => 'Bonus']);
 
-        $result = $employee->compensations()->attach($comp);
+        // attach() is void in Eloquent, so interception is detected via
+        // wasIntercepted() / getInterceptedRequest(), not a return value.
+        $employee->compensations()->attach($comp);
 
-        $this->assertFalse($result);
         $this->assertTrue(Employee::wasIntercepted());
         $this->assertSame(0, $employee->compensations()->count());
 
@@ -211,6 +212,6 @@ class RelationshipApprovalTest extends BaseTestCase
         MakerChecker::rollback($request->fresh(), $this->admin);
 
         $this->assertSame(1, $article->tags()->count());
-        $this->assertSame('high', $article->tags()->first()->pivot->relevance);
+        $this->assertSame('high', $article->tags()->first()->pivot->getAttribute('relevance'));
     }
 }

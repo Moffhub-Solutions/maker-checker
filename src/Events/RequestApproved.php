@@ -28,9 +28,7 @@ class RequestApproved
         $requiredApprovals = $request->required_approvals ?? [];
         $defaultCount = (int) config('maker-checker.default_approval_count', 1);
 
-        if (is_numeric($requiredApprovals)) {
-            $requiredCount = (int) $requiredApprovals;
-        } elseif (!is_array($requiredApprovals) || empty($requiredApprovals)) {
+        if ($requiredApprovals === []) {
             $requiredCount = $defaultCount;
         } else {
             $isNewFormat = isset($requiredApprovals['roles'])

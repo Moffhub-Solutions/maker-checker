@@ -161,7 +161,7 @@ class DefaultApproverResolver implements ApproverResolver
     public function getAllApprovers(MakerCheckerRequest $request): Collection
     {
         $requiredApprovals = $request->required_approvals;
-        if (is_numeric($requiredApprovals) || !is_array($requiredApprovals)) {
+        if (!is_array($requiredApprovals)) {
             $requiredApprovals = [];
         }
 

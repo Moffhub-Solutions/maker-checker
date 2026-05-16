@@ -574,7 +574,7 @@ class MakerCheckerRequestManager
 
             $parent = $request->subject;
 
-            if ($parent === null || !$parent->exists) {
+            if (!$parent->exists) {
                 throw RequestCannotBeRolledBack::create('The parent model no longer exists.');
             }
 
@@ -898,7 +898,7 @@ class MakerCheckerRequestManager
 
             $parent = $request->subject;
 
-            if ($parent === null || !$parent->exists) {
+            if (!$parent->exists) {
                 throw FulfillmentException::relationError('The parent model no longer exists.');
             }
 
