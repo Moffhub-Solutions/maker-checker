@@ -24,6 +24,7 @@ use Moffhub\MakerChecker\Exceptions\InvalidRequestModelSet;
 use Moffhub\MakerChecker\Exceptions\ModelCannotMakeRequests;
 use Moffhub\MakerChecker\Exceptions\RequestCouldNotBeInitiated;
 use Moffhub\MakerChecker\Models\MakerCheckerRequest;
+use Moffhub\MakerChecker\Relations\RelationOperation;
 use Throwable;
 
 class RequestBuilder
@@ -242,6 +243,139 @@ class RequestBuilder
         $this->setHooksFromExecutable($executable);
 
         return $this;
+    }
+
+    /**
+     * Commence initiation of a relationship-change request.
+     *
+     * Covers pivot operations (attach, detach, sync, syncWithoutDetaching,
+     * toggle, updateExistingPivot) and belongsTo operations (associate,
+     * dissociate). The change is applied only once the request is approved.
+     *
+     * @param  Model  $parent  The model the relationship is defined on
+     * @param  string  $relation  The relationship method name (e.g. 'compensations')
+     * @param  string  $operation  One of the supported relation operations
+     * @param  mixed  $ids  Related model(s)/id(s), or null (e.g. detach-all, dissociate)
+     * @param  array<string, mixed>  $attributes  Pivot attributes (attach/updateExistingPivot)
+     * @param  array  $requiredApprovals  Optional approval requirements
+     * @param  int|null  $teamId  Optional team id for multi-tenant systems
+     */
+    public function toRelation(
+        Model $parent,
+        string $relation,
+        string $operation,
+        mixed $ids = null,
+        array $attributes = [],
+        array $requiredApprovals = [],
+        ?int $teamId = null,
+        bool $detaching = true,
+        bool $touch = true,
+    ): self {
+        $this->assertRequestTypeIsNotSet();
+
+        RelationOperation::assertSupported($operation);
+
+        // Validates the relation exists and matches the operation kind.
+        $resolved = RelationOperation::resolveRelation($parent, $relation, $operation);
+
+        $relatedType = null;
+        if ($operation === 'associate') {
+            $relatedType = $ids instanceof Model
+                ? $ids::class
+                : $resolved->getRelated()::class;
+        }
+
+        $payload = [
+            'relation' => $relation,
+            'operation' => $operation,
+            'ids' => RelationOperation::normalizeIds($ids),
+            'attributes' => $attributes,
+            'detaching' => $detaching,
+            'touch' => $touch,
+        ];
+
+        if ($relatedType !== null) {
+            $payload['related_type'] = $relatedType;
+        }
+
+        $this->request->type = RequestType::RELATION;
+        $this->request->subject()->associate($parent);
+        $this->request->payload = $payload;
+        $this->request->team_id = $teamId;
+
+        // Snapshot current relationship state so the change can be rolled back.
+        $this->originalValues = RelationOperation::snapshot($parent, $relation, $operation);
+
+        if ($requiredApprovals !== []) {
+            $this->request->required_approvals = $requiredApprovals;
+            $this->approvalsSet = true;
+        }
+
+        return $this;
+    }
+
+    /**
+     * Initiate a request to attach related models to a BelongsToMany relation.
+     */
+    public function toAttach(Model $parent, string $relation, mixed $ids, array $attributes = []): self
+    {
+        return $this->toRelation($parent, $relation, 'attach', $ids, $attributes);
+    }
+
+    /**
+     * Initiate a request to detach related models from a BelongsToMany relation.
+     */
+    public function toDetach(Model $parent, string $relation, mixed $ids = null): self
+    {
+        return $this->toRelation($parent, $relation, 'detach', $ids);
+    }
+
+    /**
+     * Initiate a request to sync a BelongsToMany relation.
+     */
+    public function toSync(Model $parent, string $relation, mixed $ids, bool $detaching = true): self
+    {
+        return $this->toRelation($parent, $relation, 'sync', $ids, [], [], null, $detaching);
+    }
+
+    /**
+     * Initiate a request to sync without detaching on a BelongsToMany relation.
+     */
+    public function toSyncWithoutDetaching(Model $parent, string $relation, mixed $ids): self
+    {
+        return $this->toRelation($parent, $relation, 'syncWithoutDetaching', $ids);
+    }
+
+    /**
+     * Initiate a request to toggle a BelongsToMany relation.
+     */
+    public function toToggle(Model $parent, string $relation, mixed $ids): self
+    {
+        return $this->toRelation($parent, $relation, 'toggle', $ids);
+    }
+
+    /**
+     * Initiate a request to update an existing pivot row.
+     */
+    public function toUpdateExistingPivot(Model $parent, string $relation, mixed $id, array $attributes): self
+    {
+        return $this->toRelation($parent, $relation, 'updateExistingPivot', $id, $attributes);
+    }
+
+    /**
+     * Initiate a request to associate a BelongsTo relation.
+     */
+    public function toAssociate(Model $parent, string $relation, Model $related): self
+    {
+        return $this->toRelation($parent, $relation, 'associate', $related);
+    }
+
+    /**
+     * Initiate a request to dissociate a BelongsTo relation.
+     */
+    public function toDissociate(Model $parent, string $relation): self
+    {
+        return $this->toRelation($parent, $relation, 'dissociate');
     }
 
     /**

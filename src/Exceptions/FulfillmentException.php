@@ -19,6 +19,11 @@ class FulfillmentException extends RuntimeException
         return new self("Executable could not be resolved: {$reason}");
     }
 
+    public static function relationError(string $reason): self
+    {
+        return new self("Relationship operation could not be fulfilled: {$reason}");
+    }
+
     public static function create(string $reason, ?Throwable $previous = null): self
     {
         return new self("Failed to fulfill request: {$reason}", 0, $previous);

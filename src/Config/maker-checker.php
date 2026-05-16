@@ -156,7 +156,13 @@ return [
     |     'update' => ['admin' => 1],
     |     'delete' => ['admin' => 2, 'super_admin' => 1],
     |     'execute' => 1,
+    |     'relation' => ['admin' => 1], // attach/detach/sync/associate/...
     | ],
+    |
+    | The 'relation' key applies to relationship changes routed through
+    | maker-checker, either explicitly via
+    | $model->requestRelation('rel')->attach(...) or transparently with the
+    | InterceptsRelationships trait.
     |
     */
     'global_approvals' => [
@@ -164,6 +170,7 @@ return [
         'update' => [],
         'delete' => [],
         'execute' => [],
+        'relation' => [],
     ],
 
     /*
@@ -181,6 +188,7 @@ return [
     |             'create' => ['hr' => 1, 'admin' => 1],
     |             'update' => ['admin' => 1],
     |             'delete' => ['admin' => 2],
+    |             'relation' => ['admin' => 1], // relationship changes
     |         ],
     |         'unique_fields' => [
     |             'create' => ['email'],

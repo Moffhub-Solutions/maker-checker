@@ -186,6 +186,7 @@ class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
         $requiredApprovals = $this->required_approvals;
         if (is_numeric($requiredApprovals) || !is_array($requiredApprovals)) {
             $requiredCount = is_numeric($requiredApprovals) ? (int) $requiredApprovals : $this->defaultApprovalCount();
+
             return count($this->approvals ?? []) >= $requiredCount;
         }
         /** @var array $actualApprovals */

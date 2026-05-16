@@ -11,6 +11,7 @@ use Moffhub\MakerChecker\Enums\RequestType;
 use Moffhub\MakerChecker\Exceptions\PendingApprovalException;
 use Moffhub\MakerChecker\Facades\MakerChecker;
 use Moffhub\MakerChecker\Models\MakerCheckerRequest;
+use Moffhub\MakerChecker\Relations\PendingRelationship;
 
 /**
  * Trait to automatically intercept model create/update/delete operations
@@ -183,6 +184,42 @@ trait RequiresApproval
     public static function resetApprovalBypass(): void
     {
         static::$bypassApproval = false;
+    }
+
+    /**
+     * Begin an approval-gated relationship change.
+     *
+     * Native relationship writes (attach/detach/sync/associate/...) bypass
+     * Eloquent model events, so they are not caught by the create/update/
+     * delete interception. Route them explicitly through this method:
+     *
+     * ```php
+     * $employee->requestRelation('compensations')->attach($compensation);
+     * ```
+     */
+    public function requestRelation(string $relation): PendingRelationship
+    {
+        return new PendingRelationship($this, $relation);
+    }
+
+    /**
+     * Public bypass check for relationship proxies. Consumes the one-time
+     * bypass flag exactly like the create/update/delete interception does.
+     */
+    public static function approvalBypassActive(): bool
+    {
+        return static::shouldBypassApproval();
+    }
+
+    /**
+     * Record an intercepted relationship request, mirroring the behaviour of
+     * intercepted create/update/delete operations (throw or return false).
+     *
+     * @throws PendingApprovalException
+     */
+    public static function handleRelationIntercept(MakerCheckerRequest $request, string $message): bool
+    {
+        return static::handleIntercept($request, $message);
     }
 
     /**
