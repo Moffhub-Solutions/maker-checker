@@ -56,6 +56,7 @@ class Post extends Model implements MakerCheckerConfigurable
             RequestType::UPDATE => "Update post: {$title}",
             RequestType::DELETE => 'Delete post',
             RequestType::EXECUTE => 'Execute action on post',
+            RequestType::RELATION => 'Change post relationship',
         };
     }
 }

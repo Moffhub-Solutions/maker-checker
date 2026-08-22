@@ -14,6 +14,12 @@ enum RequestType: string
 
     case EXECUTE = 'execute';
 
+    /**
+     * A change to an Eloquent relationship (pivot attach/detach/sync/toggle/
+     * updateExistingPivot, or belongsTo associate/dissociate).
+     */
+    case RELATION = 'relation';
+
     public function display(): string
     {
         return match ($this) {
@@ -21,6 +27,7 @@ enum RequestType: string
             self::UPDATE => 'Update',
             self::DELETE => 'Delete',
             self::EXECUTE => 'Execute',
+            self::RELATION => 'Relation',
         };
     }
 

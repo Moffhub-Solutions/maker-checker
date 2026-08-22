@@ -120,3 +120,74 @@ $transaction->hasPendingApproval(RequestType::DELETE);   // Specific action
 $pending = $transaction->getPendingApprovals();
 $pendingDeletes = $transaction->getPendingApprovals(RequestType::DELETE);
 ```
+
+## Relationships
+
+`RequiresApproval` only intercepts model events (create/update/delete).
+Relationship pivot writes (`attach`, `detach`, `sync`, `syncWithoutDetaching`,
+`toggle`, `updateExistingPivot`) and `associate` / `dissociate` bypass model
+events entirely and are **not** caught by it.
+
+### Explicit API
+
+Available on any model using `RequiresApproval`. The relationship is not
+changed; a pending request is returned:
+
+```php
+$request = $employee->requestRelation('compensations')
+    ->madeBy($actingUser)            // optional, defaults to approval maker / auth
+    ->attach($compensation, ['role' => 'lead']);
+```
+
+All operations are supported: `attach`, `detach`, `sync`,
+`syncWithoutDetaching`, `toggle`, `updateExistingPivot`, `associate`,
+`dissociate`. Optionally chain `->description(...)`, `->withApprovals([...])`,
+`->forTeam($id)`.
+
+### Transparent Interception
+
+Add the `InterceptsRelationships` trait (alongside `RequiresApproval`) and
+declare which relations to gate. Native syntax is then intercepted just like
+`save()`/`delete()`:
+
+```php
+use Moffhub\MakerChecker\Traits\InterceptsRelationships;
+use Moffhub\MakerChecker\Traits\RequiresApproval;
+
+class Employee extends Model
+{
+    use RequiresApproval, InterceptsRelationships;
+
+    // All operations on these relations require approval:
+    protected static array $approvableRelations = ['compensations'];
+
+    // Or restrict per relation:
+    // protected static array $approvableRelations = [
+    //     'compensations' => ['attach', 'detach', 'sync'],
+    //     'manager'       => ['associate', 'dissociate'],
+    // ];
+
+    public function compensations(): BelongsToMany { /* ... */ }
+}
+
+$employee->compensations()->attach($compensation);
+
+// Relationship methods have varying return types (attach() is void),
+// so detect interception via wasIntercepted(), not the return value.
+if (Employee::wasIntercepted()) {
+    $request = Employee::getInterceptedRequest();
+}
+```
+
+The same `withoutApproval()`, `withoutApprovalDo()`, `setApprovalMaker()`,
+`throwOnIntercept()` and intercepted-request helpers documented above apply.
+Relations not listed in `$approvableRelations`, operations not listed for a
+relation, bypassed contexts, and operations with no resolvable maker
+(seeders, migrations) pass straight through unchanged.
+
+### Rollback
+
+Relation requests are reversible. The relationship state is snapshotted when
+the request is created, so `MakerChecker::rollback($request)` restores it
+(undoing attach/detach/sync/toggle/updateExistingPivot, or the previous
+foreign key for associate/dissociate).

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Moffhub\MakerChecker\Tests\Fixtures\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Moffhub\MakerChecker\Traits\RequiresApproval;
 
 /**
@@ -38,4 +39,9 @@ class Article extends Model
         'update' => ['editor' => 1],
         'delete' => ['admin' => 1],
     ];
+
+    public function tags(): BelongsToMany
+    {
+        return $this->belongsToMany(Tag::class, 'article_tag')->withPivot('relevance');
+    }
 }

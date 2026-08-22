@@ -204,6 +204,7 @@ class ConfigResolver implements ConfigResolverInterface
             RequestType::UPDATE => "Update {$modelName}",
             RequestType::DELETE => "Delete {$modelName}",
             RequestType::EXECUTE => "Execute action on {$modelName}",
+            RequestType::RELATION => "Change {$modelName} relationship",
         };
     }
 

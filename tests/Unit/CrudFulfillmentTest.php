@@ -58,9 +58,8 @@ class CrudFulfillmentTest extends BaseTestCase
         // Approve
         MakerChecker::approve($request, $this->checker, 'admin');
 
-        // Post SHOULD exist now
-        $post = Post::where('title', 'Approved Post')->first();
-        $this->assertNotNull($post, 'Post should have been created after approval');
+        // Post SHOULD exist now (firstOrFail throws if approval did not create it)
+        $post = Post::where('title', 'Approved Post')->firstOrFail();
         $this->assertEquals('Approved Post', $post->title);
     }
 
@@ -135,9 +134,8 @@ class CrudFulfillmentTest extends BaseTestCase
         // Approve - this should create the Article without re-intercepting
         MakerChecker::approve($request, $this->checker, 'admin');
 
-        // Article SHOULD exist now
-        $article = Article::where('title', 'Approved Article')->first();
-        $this->assertNotNull($article, 'Article should have been created after approval, even with RequiresApproval trait');
+        // Article SHOULD exist now (firstOrFail throws if the trait blocked it)
+        $article = Article::where('title', 'Approved Article')->firstOrFail();
         $this->assertEquals('Approved Article', $article->title);
 
         Article::setApprovalMaker(null);

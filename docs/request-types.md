@@ -1,6 +1,6 @@
 # Request Types
 
-The package supports four request types: **Create**, **Update**, **Delete**, and **Execute**.
+The package supports five request types: **Create**, **Update**, **Delete**, **Execute**, and **Relation**.
 
 ## Create
 
@@ -117,6 +117,45 @@ Or:
 ```php
 $request = MakerChecker::execute(TransferFunds::class, ['amount' => 5000]);
 ```
+
+## Relation (Nested Relationships)
+
+Native relationship writes such as `attach`, `detach`, `sync`,
+`syncWithoutDetaching`, `toggle`, `updateExistingPivot` (BelongsToMany /
+MorphToMany) and `associate` / `dissociate` (BelongsTo) bypass Eloquent
+model events, so the `create`/`update`/`delete` interception cannot see
+them. Route them through a `Relation` request instead. The change is only
+applied to the relationship once the request is approved.
+
+```php
+MakerChecker::request()
+    ->toAttach($employee, 'compensations', $compensation, ['role' => 'lead'])
+    ->withApprovals(['hr' => 1])
+    ->madeBy(auth()->user())
+    ->save();
+```
+
+Builder helpers: `toAttach`, `toDetach`, `toSync`, `toSyncWithoutDetaching`,
+`toToggle`, `toUpdateExistingPivot`, `toAssociate`, `toDissociate`, or the
+generic `toRelation($parent, $relation, $operation, $ids, $attributes)`.
+
+On models using the `RequiresApproval` trait you can use the fluent helper
+directly on the instance:
+
+```php
+$employee->requestRelation('compensations')
+    ->madeBy(auth()->user())
+    ->attach($compensation, ['role' => 'lead']);
+```
+
+To intercept native syntax transparently, see
+[Model Interception › Relationships](model-interception.md#relationships).
+
+Approval requirements for relation changes resolve from the `relation` key
+in `global_approvals` / per-model `approvals` (config), or from
+`makerCheckerApprovals()['relation']` on a `MakerCheckerConfigurable` model.
+Relation requests are reversible: `MakerChecker::rollback($request)` restores
+the previous relationship state captured when the request was created.
 
 ## Preventing Duplicate Requests
 

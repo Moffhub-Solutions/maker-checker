@@ -184,9 +184,8 @@ class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
     public function hasMetApprovalThreshold(): bool
     {
         $requiredApprovals = $this->required_approvals;
-        if (is_numeric($requiredApprovals) || !is_array($requiredApprovals)) {
-            $requiredCount = is_numeric($requiredApprovals) ? (int) $requiredApprovals : $this->defaultApprovalCount();
-            return count($this->approvals ?? []) >= $requiredCount;
+        if (!is_array($requiredApprovals)) {
+            return count($this->approvals ?? []) >= $this->defaultApprovalCount();
         }
         /** @var array $actualApprovals */
         $actualApprovals = $this->approvals ?? [];
@@ -306,7 +305,7 @@ class MakerCheckerRequest extends Model implements MakerCheckerRequestInterface
     public function getPendingRoles(): array
     {
         $requiredApprovals = $this->required_approvals;
-        if (is_numeric($requiredApprovals) || !is_array($requiredApprovals)) {
+        if (!is_array($requiredApprovals)) {
             return [];
         }
         /** @var array $actualApprovals */

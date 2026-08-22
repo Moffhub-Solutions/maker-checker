@@ -32,7 +32,7 @@ class NotificationService
         }
 
         $requiredApprovals = $request->required_approvals;
-        if (is_numeric($requiredApprovals) || !is_array($requiredApprovals)) {
+        if (!is_array($requiredApprovals)) {
             $requiredApprovals = [];
         }
 

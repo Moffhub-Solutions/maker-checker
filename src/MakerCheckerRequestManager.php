@@ -30,6 +30,7 @@ use Moffhub\MakerChecker\Exceptions\RequestCannotBeRolledBack;
 use Moffhub\MakerChecker\Exceptions\RequestCouldNotBeProcessed;
 use Moffhub\MakerChecker\Exceptions\UnauthorizedApproverException;
 use Moffhub\MakerChecker\Models\MakerCheckerRequest;
+use Moffhub\MakerChecker\Relations\RelationOperation;
 use Moffhub\MakerChecker\Services\AuditService;
 use Moffhub\MakerChecker\Services\NotificationService;
 use Throwable;
@@ -562,6 +563,27 @@ class MakerCheckerRequestManager
             }
 
             $subject->update($originalValues);
+        } elseif ($request->isOfType(RequestType::RELATION)) {
+            $original = data_get($request->metadata, 'original_values');
+
+            if (empty($original) || !is_array($original)) {
+                throw RequestCannotBeRolledBack::create(
+                    'Original relationship state was not captured when this request was created. Rollback is not possible.'
+                );
+            }
+
+            $parent = $request->subject;
+
+            if (!$parent->exists) {
+                throw RequestCannotBeRolledBack::create('The parent model no longer exists.');
+            }
+
+            $payload = $request->payload;
+
+            $this->withoutModelInterception(
+                $parent,
+                fn() => RelationOperation::reverse($parent, $payload, $original)
+            );
         } else {
             throw RequestCannotBeRolledBack::create("Rollback is not supported for '{$request->type->value}' requests.");
         }
@@ -835,16 +857,31 @@ class MakerCheckerRequestManager
             }
             /** @var Model $instance */
             $instance = new $subjectClass;
-            $instance::query()->firstOrCreate($request->payload);
+            $payload = $request->payload;
+            // Bypass interception so a model using RequiresApproval is not
+            // re-routed back into the approval flow while being fulfilled.
+            $this->withoutModelInterception(
+                $subjectClass,
+                fn() => $instance::query()->firstOrCreate($payload)
+            );
             $this->deleteRequestIfConfigured($request);
         } elseif ($request->isOfType(RequestType::UPDATE)) {
             if (!is_array($request->payload)) {
                 throw FulfillmentException::invalidPayload('an array');
             }
-            $request->subject->update($request->payload);
+            $subject = $request->subject;
+            $payload = $request->payload;
+            $this->withoutModelInterception(
+                $subject,
+                fn() => $subject->update($payload)
+            );
             $this->deleteRequestIfConfigured($request);
         } elseif ($request->isOfType(RequestType::DELETE)) {
-            $request->subject->delete();
+            $subject = $request->subject;
+            $this->withoutModelInterception(
+                $subject,
+                fn() => $subject->delete()
+            );
             $this->deleteRequestIfConfigured($request);
         } elseif ($request->isOfType(RequestType::EXECUTE)) {
             if (!is_string($request->executable) || !class_exists($request->executable)) {
@@ -854,9 +891,45 @@ class MakerCheckerRequestManager
             }
             $this->app->make($request->executable)->execute($request);
             $this->deleteRequestIfConfigured($request);
+        } elseif ($request->isOfType(RequestType::RELATION)) {
+            if (!is_array($request->payload)) {
+                throw FulfillmentException::invalidPayload('an array');
+            }
+
+            $parent = $request->subject;
+
+            if (!$parent->exists) {
+                throw FulfillmentException::relationError('The parent model no longer exists.');
+            }
+
+            $payload = $request->payload;
+
+            $this->withoutModelInterception(
+                $parent,
+                fn() => RelationOperation::apply($parent, $payload)
+            );
+
+            $this->deleteRequestIfConfigured($request);
         } else {
             throw InvalidRequestTypePassed::create($request->type);
         }
+    }
+
+    /**
+     * Run a fulfillment/rollback operation without re-triggering maker-checker
+     * interception on models that use RequiresApproval/InterceptsRelationships.
+     *
+     * @param  Model|class-string  $target
+     */
+    private function withoutModelInterception(Model|string $target, Closure $callback): mixed
+    {
+        $class = is_string($target) ? $target : $target::class;
+
+        if (method_exists($class, 'withoutApprovalDo')) {
+            return $class::withoutApprovalDo($callback);
+        }
+
+        return $callback();
     }
 
     /**
