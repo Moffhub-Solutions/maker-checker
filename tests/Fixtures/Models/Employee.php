@@ -7,6 +7,10 @@ namespace Moffhub\MakerChecker\Tests\Fixtures\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
+use Illuminate\Database\Eloquent\Relations\MorphMany;
+use Illuminate\Database\Eloquent\Relations\MorphToMany;
 use Moffhub\MakerChecker\Traits\InterceptsRelationships;
 use Moffhub\MakerChecker\Traits\RequiresApproval;
 
@@ -37,6 +41,10 @@ class Employee extends Model
     protected static array $approvableRelations = [
         'compensations',
         'manager' => ['associate', 'dissociate'],
+        'notes',
+        'remarks' => ['create'],
+        'latestNote',
+        'labels',
     ];
 
     public function compensations(): BelongsToMany
@@ -52,5 +60,25 @@ class Employee extends Model
     public function manager(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_id');
+    }
+
+    public function notes(): HasMany
+    {
+        return $this->hasMany(Note::class, 'employee_id');
+    }
+
+    public function latestNote(): HasOne
+    {
+        return $this->hasOne(Note::class, 'employee_id');
+    }
+
+    public function remarks(): MorphMany
+    {
+        return $this->morphMany(Note::class, 'noteable');
+    }
+
+    public function labels(): MorphToMany
+    {
+        return $this->morphToMany(Tag::class, 'taggable')->withPivot('relevance');
     }
 }

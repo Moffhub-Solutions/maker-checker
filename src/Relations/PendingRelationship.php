@@ -115,6 +115,35 @@ class PendingRelationship
         return $this->dispatch('dissociate');
     }
 
+    public function save(Model $child): MakerCheckerRequest
+    {
+        return $this->dispatch('save', $child);
+    }
+
+    /**
+     * @param  iterable<Model>  $children
+     */
+    public function saveMany(iterable $children): MakerCheckerRequest
+    {
+        return $this->dispatch('saveMany', $children);
+    }
+
+    /**
+     * @param  array<string, mixed>  $attributes
+     */
+    public function create(array $attributes): MakerCheckerRequest
+    {
+        return $this->dispatch('create', $attributes);
+    }
+
+    /**
+     * @param  iterable<array<string, mixed>>  $records
+     */
+    public function createMany(iterable $records): MakerCheckerRequest
+    {
+        return $this->dispatch('createMany', $records);
+    }
+
     /**
      * Build and persist the pending relationship request.
      */

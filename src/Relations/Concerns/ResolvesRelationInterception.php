@@ -26,6 +26,13 @@ trait ResolvesRelationInterception
      */
     abstract public function getRelationName();
 
+    /**
+     * True while a native (proceeding) call is running, so the relation's
+     * own internal calls (sync() -> attach(), saveMany() -> save(), ...) are
+     * not intercepted a second time.
+     */
+    private bool $proceedingNatively = false;
+
     protected function interceptRelation(
         string $operation,
         Closure $proceed,
@@ -34,6 +41,20 @@ trait ResolvesRelationInterception
         bool $detaching = true,
         bool $touch = true,
     ): mixed {
+        if ($this->proceedingNatively) {
+            return $proceed();
+        }
+
+        $proceed = function () use ($proceed): mixed {
+            $this->proceedingNatively = true;
+
+            try {
+                return $proceed();
+            } finally {
+                $this->proceedingNatively = false;
+            }
+        };
+
         $parent = $this->interceptionParent();
         $modelClass = $parent::class;
         $relation = $this->getRelationName();

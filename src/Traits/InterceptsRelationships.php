@@ -8,13 +8,19 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Moffhub\MakerChecker\Relations\ApprovableBelongsTo;
 use Moffhub\MakerChecker\Relations\ApprovableBelongsToMany;
+use Moffhub\MakerChecker\Relations\ApprovableHasMany;
+use Moffhub\MakerChecker\Relations\ApprovableHasOne;
+use Moffhub\MakerChecker\Relations\ApprovableMorphMany;
+use Moffhub\MakerChecker\Relations\ApprovableMorphOne;
 use Moffhub\MakerChecker\Relations\ApprovableMorphToMany;
 
 /**
  * Transparently routes native relationship writes through maker-checker.
  *
  * Native pivot/foreign-key writes (attach, detach, sync, toggle,
- * updateExistingPivot, associate, dissociate) bypass Eloquent model events,
+ * updateExistingPivot, associate, dissociate) and child writes through
+ * hasOne/hasMany/morphOne/morphMany (save, saveMany, create, createMany)
+ * bypass Eloquent model events,
  * so RequiresApproval cannot see them. This trait swaps the relation objects
  * for approvable proxies on the relations you opt in.
  *
@@ -178,5 +184,79 @@ trait InterceptsRelationships
         }
 
         return parent::newBelongsTo($query, $child, $foreignKey, $ownerKey, $relation);
+    }
+
+    #[\Override]
+    protected function newHasOne(Builder $query, Model $parent, $foreignKey, $localKey)
+    {
+        $name = static::guessApprovableChildRelation();
+
+        if (static::relationIsApprovable($name)) {
+            return (new ApprovableHasOne($query, $parent, $foreignKey, $localKey))->setRelationName($name);
+        }
+
+        return parent::newHasOne($query, $parent, $foreignKey, $localKey);
+    }
+
+    #[\Override]
+    protected function newHasMany(Builder $query, Model $parent, $foreignKey, $localKey)
+    {
+        $name = static::guessApprovableChildRelation();
+
+        if (static::relationIsApprovable($name)) {
+            return (new ApprovableHasMany($query, $parent, $foreignKey, $localKey))->setRelationName($name);
+        }
+
+        return parent::newHasMany($query, $parent, $foreignKey, $localKey);
+    }
+
+    #[\Override]
+    protected function newMorphOne(Builder $query, Model $parent, $type, $id, $localKey)
+    {
+        $name = static::guessApprovableChildRelation();
+
+        if (static::relationIsApprovable($name)) {
+            return (new ApprovableMorphOne($query, $parent, $type, $id, $localKey))->setRelationName($name);
+        }
+
+        return parent::newMorphOne($query, $parent, $type, $id, $localKey);
+    }
+
+    #[\Override]
+    protected function newMorphMany(Builder $query, Model $parent, $type, $id, $localKey)
+    {
+        $name = static::guessApprovableChildRelation();
+
+        if (static::relationIsApprovable($name)) {
+            return (new ApprovableMorphMany($query, $parent, $type, $id, $localKey))->setRelationName($name);
+        }
+
+        return parent::newMorphMany($query, $parent, $type, $id, $localKey);
+    }
+
+    /**
+     * Name of the relationship method that is building a has-one/has-many
+     * relation. Eloquent does not pass it to newHasMany() and friends, so it
+     * is read from the call stack (the same technique Eloquent uses for
+     * belongsToMany). Skipped entirely when no relations are opted in.
+     */
+    protected static function guessApprovableChildRelation(): ?string
+    {
+        if (static::approvableRelationConfig() === []) {
+            return null;
+        }
+
+        $skip = [
+            __FUNCTION__, 'newHasOne', 'newHasMany', 'newMorphOne', 'newMorphMany',
+            'hasOne', 'hasMany', 'morphOne', 'morphMany',
+        ];
+
+        foreach (debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS, 8) as $frame) {
+            if (!in_array($frame['function'], $skip, true)) {
+                return $frame['function'];
+            }
+        }
+
+        return null;
     }
 }
