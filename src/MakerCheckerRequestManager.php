@@ -579,10 +579,11 @@ class MakerCheckerRequestManager
             }
 
             $payload = $request->payload;
+            $applied = data_get($request->metadata, 'applied_values', []);
 
             $this->withoutModelInterception(
                 $parent,
-                fn() => RelationOperation::reverse($parent, $payload, $original)
+                fn() => RelationOperation::reverse($parent, $payload, $original, is_array($applied) ? $applied : [])
             );
         } else {
             throw RequestCannotBeRolledBack::create("Rollback is not supported for '{$request->type->value}' requests.");
@@ -904,10 +905,17 @@ class MakerCheckerRequestManager
 
             $payload = $request->payload;
 
-            $this->withoutModelInterception(
+            /** @var array<string, mixed> $applied */
+            $applied = $this->withoutModelInterception(
                 $parent,
                 fn() => RelationOperation::apply($parent, $payload)
             );
+
+            // Remember what the request created so a later rollback can undo it.
+            if ($applied !== []) {
+                $request->metadata = array_merge($request->metadata ?? [], ['applied_values' => $applied]);
+                $request->save();
+            }
 
             $this->deleteRequestIfConfigured($request);
         } else {

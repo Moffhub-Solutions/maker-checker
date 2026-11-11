@@ -288,11 +288,15 @@ class RequestBuilder
         $payload = [
             'relation' => $relation,
             'operation' => $operation,
-            'ids' => RelationOperation::normalizeIds($ids),
+            'ids' => RelationOperation::isHasManyOperation($operation) ? null : RelationOperation::normalizeIds($ids),
             'attributes' => $attributes,
             'detaching' => $detaching,
             'touch' => $touch,
         ];
+
+        if (RelationOperation::isHasManyOperation($operation)) {
+            $payload['records'] = RelationOperation::normalizeRecords($operation, $ids);
+        }
 
         if ($relatedType !== null) {
             $payload['related_type'] = $relatedType;
@@ -304,7 +308,7 @@ class RequestBuilder
         $this->request->team_id = $teamId;
 
         // Snapshot current relationship state so the change can be rolled back.
-        $this->originalValues = RelationOperation::snapshot($parent, $relation, $operation);
+        $this->originalValues = RelationOperation::snapshot($parent, $relation, $operation, $payload);
 
         if ($requiredApprovals !== []) {
             $this->request->required_approvals = $requiredApprovals;

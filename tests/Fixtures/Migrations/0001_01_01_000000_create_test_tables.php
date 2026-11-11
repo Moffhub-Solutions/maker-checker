@@ -44,6 +44,21 @@ return new class extends Migration
             $table->timestamps();
         });
 
+        Schema::create('taggables', function (Blueprint $table) {
+            $table->unsignedBigInteger('tag_id');
+            $table->morphs('taggable');
+            $table->string('relevance')->nullable();
+            $table->unique(['tag_id', 'taggable_type', 'taggable_id']);
+        });
+
+        Schema::create('notes', function (Blueprint $table) {
+            $table->id();
+            $table->string('body');
+            $table->unsignedBigInteger('employee_id')->nullable();
+            $table->nullableMorphs('noteable');
+            $table->timestamps();
+        });
+
         Schema::create('tags', function (Blueprint $table) {
             $table->id();
             $table->string('name');
@@ -85,6 +100,8 @@ return new class extends Migration
         Schema::dropIfExists('compensations');
         Schema::dropIfExists('article_tag');
         Schema::dropIfExists('tags');
+        Schema::dropIfExists('notes');
+        Schema::dropIfExists('taggables');
         Schema::dropIfExists('comments');
         Schema::dropIfExists('articles');
         Schema::dropIfExists('posts');
