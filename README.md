@@ -7,7 +7,7 @@
 
 The most feature-complete **maker-checker (four-eyes principle)** approval workflow package for Laravel. Add multi-level approval requirements to any Eloquent model with a single trait, or use the full-featured API for complex enterprise workflows.
 
-Unlike simpler approval packages, this supports **multi-role approvals**, a **conditional rules engine**, **approval delegation**, **bulk operations**, **audit trail with export**, **reminders & escalation**, and **auto-intercept via Eloquent model events** -- all out of the box.
+Unlike simpler approval packages, this supports **multi-role approvals**, a **conditional rules engine**, **approval delegation**, **bulk operations**, **audit trail with export**, **reminders & escalation**, **auto-intercept via Eloquent model events**, and **relationship-level approval** (attach/detach/sync/associate) -- all out of the box.
 
 ## Why This Package?
 
@@ -19,13 +19,14 @@ Unlike simpler approval packages, this supports **multi-role approvals**, a **co
 | Conditional rules engine (if amount > 50K...) | ✅ | ❌ |
 | Database-driven config (change rules at runtime) | ✅ | ❌ |
 | Execute arbitrary actions (not just CRUD) | ✅ | ❌ |
+| Relationship approval (attach/detach/sync/associate) | ✅ | ❌ |
 | Approval delegation with expiry | ✅ | ❌ |
 | Bulk approve endpoint | ✅ | ❌ |
 | Reminders & escalation | ✅ | ❌ |
 | Audit trail + CSV/JSON export | ✅ | Rare |
 | Race condition safe (pessimistic locking) | ✅ | ❌ |
 | REST API included | ✅ | ❌ |
-| 360+ tests | ✅ | Varies |
+| 420+ tests | ✅ | Varies |
 
 ## Features
 
@@ -34,6 +35,7 @@ Unlike simpler approval packages, this supports **multi-role approvals**, a **co
 - **User-specific approvals** - Require specific people to approve by email or ID
 - **Conditional rules engine** - Different approval rules based on payload (e.g., amount > 50,000 needs extra approval)
 - **CRUD + Execute** - Built-in support for Create, Update, Delete, and custom Execute operations
+- **Relationship approval** - Gate `attach`/`detach`/`sync`/`toggle`/`updateExistingPivot` and `associate`/`dissociate`, either explicitly or transparently; rollback supported
 - **Flexible configuration** - Configure via file, database, model interfaces, or runtime API
 - **Multi-tenancy support** - Team/company scoping for requests
 - **API ready** - RESTful API endpoints for managing requests, configs, delegations, and audits
@@ -348,6 +350,37 @@ MakerChecker::request()
     ->madeBy(auth()->user())
     ->save();
 ```
+
+### Relationship (Nested Relationships)
+
+Native relationship writes (`attach`, `detach`, `sync`, `syncWithoutDetaching`,
+`toggle`, `updateExistingPivot`, `associate`, `dissociate`) bypass Eloquent
+model events, so they are not caught by create/update/delete interception.
+Route them through a relationship request instead. The change is applied to
+the relationship only after approval, and is reversible via rollback.
+
+Explicit API (any model using `RequiresApproval`):
+
+```php
+$employee->requestRelation('compensations')
+    ->madeBy(auth()->user())
+    ->attach($compensation, ['role' => 'lead']);
+```
+
+Or via the request builder:
+
+```php
+MakerChecker::request()
+    ->toAttach($employee, 'compensations', $compensation, ['role' => 'lead'])
+    ->madeBy(auth()->user())
+    ->save();
+```
+
+To intercept native `$employee->compensations()->attach(...)` syntax
+transparently, add the `InterceptsRelationships` trait and declare
+`$approvableRelations`. Approval requirements resolve from the `relation` key
+in config/`global_approvals`. See [docs/model-interception.md](docs/model-interception.md#relationships)
+and [docs/request-types.md](docs/request-types.md#relation-nested-relationships).
 
 ## Multi-Role Approvals
 
@@ -870,6 +903,41 @@ Transaction::create([...]);
 // Reset to use auth()->user() again
 Transaction::setApprovalMaker(null);
 ```
+
+### Relationships
+
+`RequiresApproval` only intercepts model events (create/update/delete).
+Relationship pivot/foreign-key writes (`attach`, `detach`, `sync`,
+`syncWithoutDetaching`, `toggle`, `updateExistingPivot`, `associate`,
+`dissociate`) bypass model events entirely. Use `requestRelation()` for an
+explicit request, or add the `InterceptsRelationships` trait to gate native
+syntax transparently:
+
+```php
+class Employee extends Model
+{
+    use RequiresApproval, InterceptsRelationships;
+
+    protected static array $approvableRelations = [
+        'compensations',                        // all operations
+        'manager' => ['associate', 'dissociate'],
+    ];
+}
+
+$employee->compensations()->attach($compensation);
+
+// Relationship methods have varying return types (attach() is void), so
+// detect interception via wasIntercepted(), not the return value.
+if (Employee::wasIntercepted()) {
+    $request = Employee::getInterceptedRequest();
+}
+```
+
+The same bypass helpers (`withoutApproval()`, `withoutApprovalDo()`),
+`setApprovalMaker()` and `throwOnIntercept()` apply. Relations or operations
+not listed, bypassed contexts, and operations with no resolvable maker
+(seeders, migrations) pass straight through. See
+[docs/model-interception.md](docs/model-interception.md#relationships).
 
 ## Visibility Scoping
 

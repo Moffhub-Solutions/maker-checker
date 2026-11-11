@@ -4,7 +4,25 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
-## [Unreleased]
+## [v0.1.2] - 2026-11-11
+
+### Added
+- Relationship-level approval: new `RequestType::RELATION` covering `attach`, `detach`, `sync`, `syncWithoutDetaching`, `toggle`, `updateExistingPivot` (BelongsToMany/MorphToMany) and `associate`/`dissociate` (BelongsTo)
+- Explicit relationship API: `RequiresApproval::requestRelation()` returning a fluent `PendingRelationship`, plus `RequestBuilder::toRelation()`/`toAttach()`/`toDetach()`/`toSync()`/`toSyncWithoutDetaching()`/`toToggle()`/`toUpdateExistingPivot()`/`toAssociate()`/`toDissociate()`
+- Transparent relationship interception via the `InterceptsRelationships` trait and `$approvableRelations` config (Approvable* relation proxies)
+- Rollback support for relationship requests (prior relationship state snapshotted at request time)
+- `relation` key in `global_approvals` / model `approvals` config for relationship approval requirements
+
+### Fixed
+- Fulfillment and rollback of create/update/delete/relationship requests no longer re-trigger `RequiresApproval` interception (previously an approved change could be silently re-queued instead of applied)
+- `RequestApproved::fromRequest()` no longer calls `array_sum()` on non-numeric approval structures (PHP 8.4+ `array_sum` on strings), fixing OR-mode/user-based approvals
+- Removed dead `is_numeric()` guards on the array-cast `required_approvals` and resolved all PHPStan findings
+
+### Security
+- Raised the minimum `illuminate/support` to `^12.69 || ^13.30` so installs resolve a Laravel release that includes the fix for the `TokenGuard` authentication bypass through non-string API credentials (GHSA advisory for `laravel/framework`)
+- Updated the dev lockfile from `laravel/framework` v13.2.0 to v13.42.0
+
+## [v0.1.1] - 2026-03-29
 
 ### Added
 - Checker identity validation via `ApproverResolver` before approval processing
@@ -31,6 +49,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 - PHPStan level tightened with unnecessary ignores removed
+- Updated to Laravel 13 support (`illuminate/support` `^12.0 || ^13.0`)
 
 ## [v0.1.0] - 2026-01-29
 
