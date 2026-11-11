@@ -3,7 +3,7 @@ on:
   push:
 jobs:
   tests:
-    runs-on: [self-hosted, Linux, X64, moffhub]
+    runs-on: [self-hosted, Linux, X64]
     container: php:${{ matrix.php }}-cli
     strategy:
       fail-fast: true
